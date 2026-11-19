@@ -127,7 +127,7 @@ function renderProposals() {
 
 function showReview(r, offerSign) {
   showDialog(`
-    <h2>Proposal from ${esc(r.proposer)} ${r.ok ? '<span class="chip ok">checks pass</span>' : '<span class="chip bad">do not sign</span>'}</h2>
+    <h2>Proposal from ${esc(r.proposer)} ${r.status === 'executed' ? '<span class="chip ok">already executed</span>' : r.ok ? '<span class="chip ok">checks pass</span>' : '<span class="chip bad">do not sign</span>'}</h2>
     <ul class="summary">${r.summary.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>
     ${r.problems.length ? `<h3>Problems</h3><ul>${r.problems.map((p) => `<li class="chip bad">${esc(p)}</li>`).join('')}</ul>` : ''}
     ${r.warnings.length ? `<h3>Warnings</h3><ul>${r.warnings.map((p) => `<li>${esc(p)}</li>`).join('')}</ul>` : ''}
@@ -175,7 +175,16 @@ $('#form-ceremony').onsubmit = (e) => {
   const keys = f.keys.value.trim() ? JSON.parse(f.keys.value) : undefined;
   act('Propose ceremony', () => api('POST', '/api/ceremony/propose', { network: f.network.value, threshold: f.threshold.value, label: f.label.value, members, keys }));
 };
-$('#form-identity-create').onsubmit = (e) => { e.preventDefault(); act('Lock funds and propose identity (this waits for a ChainLock)', () => api('POST', '/api/identity/create', formData(e.target))); };
+$('#form-identity-create').onsubmit = (e) => {
+  e.preventDefault();
+  const body = formData(e.target);
+  const ceremony = (state.ceremonies ?? []).find((c) => c.cid === body.cid);
+  if (ceremony?.network === 'mainnet') {
+    if (prompt(`This locks ${Number(body.duffs) / 1e8} DASH of real money on mainnet. Type "mainnet" to continue.`) !== 'mainnet') return;
+    body.confirmMainnet = true;
+  }
+  act('Lock funds and propose identity (this waits for a ChainLock)', () => api('POST', '/api/identity/create', body));
+};
 
 const kindSelect = $('#propose-kind');
 const showKindFields = () => { for (const el of document.querySelectorAll('[data-kinds]')) el.hidden = !el.dataset.kinds.split(' ').includes(kindSelect.value); };

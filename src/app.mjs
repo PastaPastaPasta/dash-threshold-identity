@@ -209,7 +209,9 @@ export class Session {
     return { address, duffs: list.reduce((a, u) => a + u.satoshis, 0), utxos: list.length };
   }
 
-  async assetLock(network, { duffs, kind = 'registration', index }) {
+  async assetLock(network, { duffs, kind = 'registration', index, confirmMainnet = false }) {
+    assert(network !== 'mainnet' || confirmMainnet, 'this locks real DASH on mainnet; confirm it explicitly (--confirm-mainnet)');
+    assert(Number.isSafeInteger(duffs) && duffs >= 100000, 'lock at least 100000 duffs');
     const j = journal(`asset-locks-${network}-${this.keys.authPub.slice(0, 16)}`);
     const all = j.get();
     const key = `${kind}/${index}`;
@@ -243,12 +245,12 @@ export class Session {
     return used.length ? Math.max(...used) + 1 : 0;
   }
 
-  async proposeIdentityCreate({ cid, duffs, index }) {
+  async proposeIdentityCreate({ cid, duffs, index, confirmMainnet = false }) {
     const c = this.ceremony(cid);
     assert(c.status === 'complete', `ceremony is ${c.status}`);
     const network = c.config.network;
     const keyIndex = index ?? this.nextAssetLockIndex(network, 'registration');
-    const lock = await this.assetLock(network, { duffs, kind: 'registration', index: keyIndex });
+    const lock = await this.assetLock(network, { duffs, kind: 'registration', index: keyIndex, confirmMainnet });
     const intent = {
       type: 'identity-create',
       assetLockProof: { coreChainLockedHeight: lock.coreChainLockedHeight, txid: lock.txid, vout: 0, keyIndex, funder: this.keys.authPub },
@@ -388,11 +390,11 @@ export class Session {
     return { id: p.id, ...result, derived: p.body.derived };
   }
 
-  async topUp({ identityId, duffs, index }) {
+  async topUp({ identityId, duffs, index, confirmMainnet = false }) {
     await this.sync();
     const id = this.identity(identityId);
     const keyIndex = index ?? this.nextAssetLockIndex(id.network, 'topup');
-    const lock = await this.assetLock(id.network, { duffs, kind: 'topup', index: keyIndex });
+    const lock = await this.assetLock(id.network, { duffs, kind: 'topup', index: keyIndex, confirmMainnet });
     const st = await core.topUpTransition({ network: id.network, seed: this.seed, index: keyIndex, identityId: id.identityId, proof: { coreChainLockedHeight: lock.coreChainLockedHeight, txid: lock.txid, vout: 0 } });
     const sdk = await this.sdk(id.network);
     const before = (await retry(() => sdk.identities.balance(id.identityId))) ?? 0n;

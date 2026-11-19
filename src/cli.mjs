@@ -27,7 +27,7 @@ An optional BIP39 passphrase comes from DTI_PASSPHRASE or --passphrase-file.
   dti ceremony show [--cid C]
 
   dti fund address --network N                 your Core funding address (from your seed) and balance
-  dti identity create [--cid C] --duffs D      funder: lock D duffs and propose the identity
+  dti identity create [--cid C] --duffs D      funder: lock D duffs and propose the identity (mainnet: --confirm-mainnet)
   dti identity show [--identity ID]            proved read: on-chain keys vs the group keys
   dti identity topup [--identity ID] --duffs D
 
@@ -57,7 +57,7 @@ const OPTIONS = {
   signer: { type: 'string' }, to: { type: 'string' }, 'to-address': { type: 'string' }, amount: { type: 'string' },
   add: { type: 'string' }, disable: { type: 'string' }, 'fee-increase': { type: 'string' }, note: { type: 'string' },
   reason: { type: 'string' }, port: { type: 'string' }, host: { type: 'string' }, dir: { type: 'string' },
-  'mnemonic-file': { type: 'string' }, 'passphrase-file': { type: 'string' }, offline: { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
+  'confirm-mainnet': { type: 'boolean' }, 'mnemonic-file': { type: 'string' }, 'passphrase-file': { type: 'string' }, offline: { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
 };
 
 const print = (v, asJson) => console.log(asJson || typeof v !== 'string' ? JSON.stringify(v, jsonReplacer, 2) : v);
@@ -164,9 +164,9 @@ export async function main(argv) {
     }
     case 'identity': {
       const s = await session(v);
-      if (sub === 'create') return print(await s.proposeIdentityCreate({ cid: v.cid, duffs: Number(v.duffs), index: v.index ? Number(v.index) : undefined }), true);
+      if (sub === 'create') return print(await s.proposeIdentityCreate({ cid: v.cid, duffs: Number(v.duffs), index: v.index ? Number(v.index) : undefined, confirmMainnet: v['confirm-mainnet'] }), true);
       if (sub === 'show') return print(await s.showIdentity(v.identity), true);
-      if (sub === 'topup') return print(await s.topUp({ identityId: v.identity, duffs: Number(v.duffs), index: v.index ? Number(v.index) : undefined }), true);
+      if (sub === 'topup') return print(await s.topUp({ identityId: v.identity, duffs: Number(v.duffs), index: v.index ? Number(v.index) : undefined, confirmMainnet: v['confirm-mainnet'] }), true);
       break;
     }
     case 'propose': {
