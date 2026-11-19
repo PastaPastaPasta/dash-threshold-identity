@@ -85,7 +85,7 @@ cd relay && npx wrangler deploy     # Cloudflare Worker + one SQLite Durable Obj
 dti relay serve --port 8787 --dir ./relay-data   # or the same API on any machine with Node
 ```
 
-The relay only stores and returns messages. It refuses messages whose signature does not check out or that name another room. It cannot forge, alter or read secret messages; key shares travel encrypted to their recipient. A dishonest relay can only withhold messages, which stalls a ceremony or proposal but cannot break it.
+The relay only stores and returns messages. It refuses messages whose signature does not check out or that name another room. It also refuses anything but a join from keys that are neither the room's creator nor named in one of its ceremonies. It cannot forge, alter or read secret messages; key shares travel encrypted to their recipient. A dishonest relay can only withhold messages, which stalls a ceremony or proposal but cannot break it.
 
 ## Development
 

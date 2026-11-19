@@ -1,7 +1,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
-import { handle, memoryStore } from './core.mjs';
+import { handle, memoryStore, admit } from './core.mjs';
 
 export function fileStore(dir) {
   const mem = memoryStore();
@@ -12,11 +12,13 @@ export function fileStore(dir) {
     if (loaded.has(room)) return;
     loaded.add(room);
     if (!fs.existsSync(file(room))) return;
-    const r = { rows: [], ids: new Set() };
+    const r = { rows: [], ids: new Set(), policy: null };
     for (const line of fs.readFileSync(file(room), 'utf8').split('\n').filter(Boolean)) {
       const row = JSON.parse(line);
       r.rows.push(row);
       r.ids.add(row.id);
+      const verdict = admit(r.policy, JSON.parse(row.body));
+      if (verdict.ok) r.policy = verdict.next;
     }
     mem.rooms.set(room, r);
   };
@@ -28,6 +30,9 @@ export function fileStore(dir) {
       return seq;
     },
     async countFrom(room, from) { load(room); return mem.countFrom(room, from); },
+    async exists(room, id) { load(room); return mem.exists(room, id); },
+    async policy(room) { load(room); return mem.policy(room); },
+    async setPolicy(room, policy) { load(room); return mem.setPolicy(room, policy); },
     async list(room, after, limit) { load(room); return mem.list(room, after, limit); },
     async ids(room) { load(room); return mem.ids(room); },
     async count(room) { load(room); return mem.count(room); },

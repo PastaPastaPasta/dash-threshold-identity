@@ -7,6 +7,7 @@ export class Room extends DurableObject {
     this.sql = ctx.storage.sql;
     this.sql.exec('CREATE TABLE IF NOT EXISTS messages (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT UNIQUE NOT NULL, body TEXT NOT NULL)');
     try { this.sql.exec('ALTER TABLE messages ADD COLUMN sender TEXT'); } catch { /* column exists */ }
+    this.sql.exec('CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)');
   }
 
   async fetch(request) {
@@ -30,6 +31,16 @@ export class Room extends DurableObject {
       },
       async countFrom(_room, from) {
         return sql.exec('SELECT COUNT(*) AS n FROM messages WHERE sender = ?', from).one().n;
+      },
+      async exists(_room, id) {
+        return sql.exec('SELECT 1 FROM messages WHERE id = ?', id).toArray().length > 0;
+      },
+      async policy() {
+        const row = sql.exec("SELECT v FROM meta WHERE k = 'policy'").toArray()[0];
+        return row ? JSON.parse(row.v) : null;
+      },
+      async setPolicy(_room, policy) {
+        sql.exec("INSERT INTO meta (k, v) VALUES ('policy', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v", JSON.stringify(policy));
       },
     };
     return handleRoom(request, room, store);

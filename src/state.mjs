@@ -10,7 +10,6 @@ const cachedGroupKeys = memo(groupKeys, (config, reveals) => digest({ config, re
 const cachedVerify = memo(verify, (sig, message, pk) => `${sig}|${pk}|${sha256hex(message)}`);
 
 const ORDER = ['hello', 'config', 'accept', 'dkg-commit', 'dkg-reveal', 'dkg-complete', 'dkg-complaint', 'proposal', 'approve', 'reject', 'broadcast'];
-const MAX_COMBINATIONS = 64;
 
 export const requirementKey = (r) => `${r.cid}/${r.slot}`;
 const dict = () => Object.create(null);
@@ -149,11 +148,6 @@ function completionMatches(c, body, keys, transcript) {
   return body.transcript === transcript && c.config.keys.every(({ slot }) => body.keys?.[slot]?.groupPublicKey === keys[slot].groupPublicKey && body.keys?.[slot]?.publicSharesDigest === digest(keys[slot].publicShares));
 }
 
-function* combinations(choices, i = 0, acc = []) {
-  if (i === choices.length) { yield acc; return; }
-  for (const x of choices[i]) yield* combinations(choices, i + 1, [...acc, x]);
-}
-
 function select(c, participants, per, chosen) {
   c.commits = dict();
   c.reveals = dict();
@@ -167,6 +161,23 @@ function select(c, participants, per, chosen) {
   });
 }
 
+function agreedCompletion(c, participants, per) {
+  const completesOf = (i) => c.raw.completes[i] ?? [];
+  const listOf = (body) => (Array.isArray(body.reveals) && body.reveals.length === participants.length && body.reveals.every((d) => isHex(d, 32)) ? body.reveals.join(',') : null);
+  const candidates = new Set(completesOf(participants[0]).map(listOf).filter(Boolean));
+  for (const candidate of candidates) {
+    const digests = candidate.split(',');
+    if (!participants.every((i) => completesOf(i).some((body) => listOf(body) === candidate))) continue;
+    const chosen = participants.map((i, k) => per[i].reveals.find((r) => r.digest === digests[k]));
+    if (chosen.some((r) => !r)) continue;
+    const transcript = transcriptDigest(c.cid, c.config, Object.fromEntries(participants.map((i, k) => [i, digests[k]])));
+    let keys;
+    try { keys = cachedGroupKeys(c.config, Object.fromEntries(participants.map((i, k) => [i, chosen[k].reveal]))); } catch { continue; }
+    if (participants.every((i) => completesOf(i).some((body) => listOf(body) === candidate && completionMatches(c, body, keys, transcript)))) return { chosen, keys, transcript };
+  }
+  return null;
+}
+
 function finishCeremony(c) {
   const participants = c.config.participants.map((p) => p.index);
   const n = participants.length;
@@ -177,23 +188,14 @@ function finishCeremony(c) {
   const allCompleted = participants.every((i) => completesOf(i).length);
   const allRevealed = participants.every((i) => per[i].reveals.length);
 
-  if (allCompleted && allRevealed) {
-    const choices = participants.map((i) => per[i].reveals);
-    if (choices.reduce((a, x) => a * x.length, 1) <= MAX_COMBINATIONS) {
-      for (const combo of combinations(choices)) {
-        const reveals = Object.fromEntries(participants.map((i, k) => [i, combo[k].reveal]));
-        const transcript = transcriptDigest(c.cid, c.config, Object.fromEntries(participants.map((i, k) => [i, combo[k].digest])));
-        let keys;
-        try { keys = cachedGroupKeys(c.config, reveals); } catch { continue; }
-        if (!participants.every((i) => completesOf(i).some((body) => completionMatches(c, body, keys, transcript)))) continue;
-        select(c, participants, per, combo);
-        c.status = 'complete';
-        c.result = { cid: c.cid, network: c.config.network, threshold: c.config.threshold, transcript, keys: Object.fromEntries(c.config.keys.map((k) => [k.slot, { ...k, ...keys[k.slot] }])) };
-        if (equivocators.length) c.warnings.push({ reason: `conflicting messages after completion from participant(s) ${equivocators.join(', ')}` });
-        if (c.complaints.length) c.warnings.push({ reason: `${c.complaints.length} complaint(s) posted after every member completed`, complaints: c.complaints });
-        return;
-      }
-    }
+  const agreed = allCompleted ? agreedCompletion(c, participants, per) : null;
+  if (agreed) {
+    select(c, participants, per, agreed.chosen);
+    c.status = 'complete';
+    c.result = { cid: c.cid, network: c.config.network, threshold: c.config.threshold, transcript: agreed.transcript, keys: Object.fromEntries(c.config.keys.map((k) => [k.slot, { ...k, ...agreed.keys[k.slot] }])) };
+    if (equivocators.length) c.warnings.push({ reason: `conflicting messages after completion from participant(s) ${equivocators.join(', ')}` });
+    if (c.complaints.length) c.warnings.push({ reason: `${c.complaints.length} complaint(s) posted after every member completed`, complaints: c.complaints });
+    return;
   }
 
   select(c, participants, per, null);

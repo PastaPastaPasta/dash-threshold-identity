@@ -1,4 +1,4 @@
-import { buildTransition, decodeTransition, describeIntent, requirementsFor, expectedLevels, assembleSigned } from './platform/transitions.mjs';
+import { buildTransition, decodeTransition, describeIntent, requirementsFor, expectedLevels, assembleSigned, validateIntent, keysAdded } from './platform/transitions.mjs';
 import { retry, errorText } from './platform/sdk.mjs';
 import { canonical, assert, getOwn } from './util.mjs';
 import { requirementKey } from './state.mjs';
@@ -28,7 +28,7 @@ function rosterKey(state, cid) {
 function attentionFor(state, intent, me) {
   const out = [];
   const signerCid = intent.signer?.cid;
-  for (const k of intent.keys ?? intent.addKeys ?? []) {
+  for (const k of keysAdded(intent)) {
     if (!slotInfo(state, k)) continue;
     const lines = [`key ${k.keyId} (${k.purpose}/${k.securityLevel}) will be controlled by ceremony ${ceremonyLine(state, k.cid)}`];
     if (me && !participantIndex(state.ceremonies[k.cid].config, me)) lines.push('  you are NOT a member of that ceremony');
@@ -42,6 +42,11 @@ export async function reviewProposal(state, proposalId, { sdk = null, online = f
   const p = getOwn(state.proposals, proposalId);
   assert(p, `unknown proposal ${proposalId}`);
   const { intent } = p.body;
+  try {
+    validateIntent(intent);
+  } catch (e) {
+    return { ok: false, problems: [`malformed intent: ${e.message}`], warnings: [], attention: [], summary: [`malformed ${String(intent?.type)} proposal`], decoded: null, status: p.status };
+  }
   const problems = [];
   const warnings = [];
   let rebuilt;
@@ -55,7 +60,7 @@ export async function reviewProposal(state, proposalId, { sdk = null, online = f
   }
   if (canonical(requirementsFor(intent)) !== canonical(p.body.requirements)) problems.push('signing requirements do not follow from the intent');
   for (const r of p.body.requirements) if (!slotInfo(state, r)) problems.push(`key ${requirementKey(r)} is not from a completed ceremony`);
-  for (const k of intent.keys ?? intent.addKeys ?? []) {
+  for (const k of keysAdded(intent)) {
     const info = slotInfo(state, k);
     if (!info) continue;
     if (info.groupPublicKey !== k.publicKey) problems.push(`key ${k.keyId} is not the group key of ${k.slot}`);
@@ -73,6 +78,10 @@ export async function reviewProposal(state, proposalId, { sdk = null, online = f
     }
   }
   if ((intent.userFeeIncrease ?? 0) > 100) problems.push(`fee increase of ${intent.userFeeIncrease}% is unusually high`);
+  if (intent.signer) {
+    const info = slotInfo(state, intent.signer);
+    if (info && info.keyId !== intent.signer.keyId) problems.push(`signing key id ${intent.signer.keyId} is not the id the ceremony gave ${intent.signer.slot} (${info.keyId})`);
+  }
   const levels = expectedLevels(intent);
   if (intent.signer && levels) {
     const info = slotInfo(state, intent.signer);

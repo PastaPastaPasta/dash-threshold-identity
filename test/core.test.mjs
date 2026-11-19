@@ -171,6 +171,37 @@ test('late complaints or conflicting messages cannot undo a completed ceremony',
   assert.ok(c.warnings.length >= 2);
 });
 
+test('flooding valid alternative reveals after completion cannot undo it', () => {
+  const messages = [...base.messages];
+  const mine = base.messages.find((m) => m.type === 'dkg-reveal' && m.from === ps[3].keys.authPub);
+  for (let i = 0; i < 65; i++) {
+    const alt = JSON.parse(JSON.stringify(mine.body));
+    const box = alt.reveal.slots.master.boxes['1'];
+    alt.reveal.slots.master.boxes['1'] = box.slice(0, -4) + i.toString(16).padStart(4, '0');
+    messages.push(sealEnvelope(ps[3].keys, ROOM, 'dkg-commit', { cid: base.cid, digest: revealDigest(alt.reveal) }));
+    messages.push(sealEnvelope(ps[3].keys, ROOM, 'dkg-reveal', alt));
+  }
+  const c = reduce(messages).ceremonies[base.cid];
+  assert.equal(c.status, 'complete');
+  assert.deepEqual(c.result, base.state.ceremonies[base.cid].result);
+});
+
+test('complaints cannot frame anyone with a bogus slot or against themselves', () => {
+  const c0 = base.state.ceremonies[base.cid];
+  const ev = { key: '00'.repeat(32), nonce: '00'.repeat(12) };
+  for (const slot of ['nope', 'constructor', '__proto__']) assert.equal(ceremonyJudge(c0.config, base.cid, { from: 2, against: 1, slot, evidence: ev }, c0.reveals[1]), 'unproven');
+  assert.equal(ceremonyJudge(c0.config, base.cid, { from: 1, against: 1, slot: 'master', evidence: ev }, c0.reveals[1]), 'unproven');
+});
+
+test('a share that decrypts to something other than a scalar is proven against its sender', () => {
+  const c = tamperedCeremony('bad-share-format', (reveal, cid) => {
+    const ctx = boxContext({ cid, slot: 'high', from: 5, to: 1, fromTransport: ps[4].keys.transportPub, toTransport: ps[0].keys.transportPub });
+    reveal.slots.high.boxes['1'] = encryptBox(ps[4].keys.transportSecret, ps[0].keys.transportPub, ctx, 'not a scalar');
+  });
+  assert.equal(c.status, 'failed');
+  assert.ok(c.complaints.some((x) => x.from === 1 && x.against === 5 && x.slot === 'high' && x.verdict === 'proven'));
+});
+
 test('a complaint against an honest share is shown to be false', () => {
   const messages = base.messages.filter((m) => m.type !== 'dkg-complete');
   const c0 = reduce(messages).ceremonies[base.cid];

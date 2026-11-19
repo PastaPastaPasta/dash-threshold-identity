@@ -1,8 +1,10 @@
 import { verifyEnvelope, envelopeId } from '../envelope.mjs';
-import { ROOM_PATTERN } from '../util.mjs';
+import { ROOM_PATTERN, isHex } from '../util.mjs';
+
 export const MAX_MESSAGE_BYTES = 300 * 1024;
 export const MAX_MESSAGES_PER_ROOM = 5000;
 export const MAX_MESSAGES_PER_SENDER = 500;
+export const MAX_HELLOS = 256;
 const PAGE = 200;
 
 const CORS = {
@@ -18,6 +20,20 @@ export function parseRoute(url) {
   if (!m) return null;
   const room = decodeURIComponent(m[1]);
   return ROOM_PATTERN.test(room) ? room : null;
+}
+
+export function admit(policy, envelope) {
+  const p = policy ?? { owner: null, pinned: [], hellos: 0 };
+  if (envelope.type === 'hello') {
+    if (!p.owner) return { ok: true, next: { owner: envelope.from, pinned: [envelope.from], hellos: 1 } };
+    if (p.hellos >= MAX_HELLOS) return { ok: false, reason: 'this room has had too many joins' };
+    return { ok: true, next: { ...p, hellos: p.hellos + 1 } };
+  }
+  if (!p.owner) return { ok: false, reason: 'the room creator must post the first message' };
+  if (!p.pinned.includes(envelope.from)) return { ok: false, reason: 'only the room creator and members named in a ceremony may post this' };
+  if (envelope.type !== 'config') return { ok: true, next: p };
+  const named = (envelope.body?.config?.participants ?? []).map((x) => x?.authPub).filter((k) => isHex(k, 32));
+  return { ok: true, next: { ...p, pinned: [...new Set([...p.pinned, ...named])] } };
 }
 
 export async function handleRoom(request, room, store) {
@@ -41,11 +57,15 @@ export async function handleRoom(request, room, store) {
     }
     if (envelope?.room !== room) return json(400, { error: 'envelope is for another room' });
     if (!verifyEnvelope(envelope)) return json(400, { error: 'envelope signature does not verify' });
+    const id = envelopeId(envelope);
+    if (await store.exists(room, id)) return json(200, { id, seq: null, duplicate: true });
     if ((await store.count(room)) >= MAX_MESSAGES_PER_ROOM) return json(429, { error: 'room is full' });
     if ((await store.countFrom(room, envelope.from)) >= MAX_MESSAGES_PER_SENDER) return json(429, { error: 'too many messages from this key' });
-    const id = envelopeId(envelope);
+    const verdict = admit(await store.policy(room), envelope);
+    if (!verdict.ok) return json(403, { error: verdict.reason });
     const seq = await store.append(room, id, JSON.stringify(envelope), envelope.from);
-    return json(200, { id, seq, duplicate: seq === null });
+    await store.setPolicy(room, verdict.next);
+    return json(200, { id, seq, duplicate: false });
   }
   return json(405, { error: 'method not allowed' });
 }
@@ -61,8 +81,17 @@ export async function handle(request, storeFor) {
 
 export function memoryStore() {
   const rooms = new Map();
-  const get = (room) => rooms.get(room) ?? rooms.set(room, { rows: [], ids: new Set() }).get(room);
+  const get = (room) => rooms.get(room) ?? rooms.set(room, { rows: [], ids: new Set(), policy: null }).get(room);
   return {
+    async exists(room, id) {
+      return get(room).ids.has(id);
+    },
+    async policy(room) {
+      return get(room).policy;
+    },
+    async setPolicy(room, policy) {
+      get(room).policy = policy;
+    },
     async append(room, id, body, from) {
       const r = get(room);
       if (r.ids.has(id)) return null;

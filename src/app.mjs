@@ -159,7 +159,7 @@ export class Session {
 
   identities(s = this.state()) {
     const out = Object.create(null);
-    const executed = Object.values(s.proposals).filter((p) => p.status === 'executed').sort((a, b) => a.at.localeCompare(b.at));
+    const executed = Object.values(s.proposals).filter((p) => p.status === 'executed' && p.broadcasts.some((b) => b.result.ok === true && b.result.confirmed === true)).sort((a, b) => a.at.localeCompare(b.at));
     for (const p of executed) {
       const i = p.body.intent;
       if (i.type === 'identity-create' && typeof p.body.derived?.identityId === 'string' && Array.isArray(i.keys)) {
@@ -244,7 +244,8 @@ export class Session {
     assert(network !== 'mainnet' || confirmMainnet, 'this locks real DASH on mainnet; confirm it explicitly (--confirm-mainnet)');
     const j = journal(`asset-locks-${network}-${this.keys.authPub.slice(0, 16)}`);
     const all = j.get();
-    let rec = Object.values(all).find((r) => r.kind === kind && !r.usedBy && (index === undefined || r.index === index)) ?? null;
+    if (index !== undefined) assert(!all[`${kind}/${index}`]?.usedBy, `asset lock ${kind}/${index} was already used`);
+    let rec = Object.values(all).find((r) => r.kind === kind && !r.usedBy && !r.abandoned && (index === undefined ? r.duffs === duffs : r.index === index)) ?? null;
     if (rec) this.log(`resuming asset lock ${rec.txid} (${rec.duffs} duffs, ${rec.state})`);
     if (!rec) {
       assert(Number.isSafeInteger(duffs) && duffs >= 100000, 'lock at least 100000 duffs');
@@ -257,7 +258,13 @@ export class Session {
       j.set(all);
     }
     if (rec.state === 'built') {
-      if (!(await core.fetchTx(network, rec.txid))) await core.broadcastRaw(network, rec.rawtx);
+      try {
+        if (!(await core.fetchTx(network, rec.txid))) await core.broadcastRaw(network, rec.rawtx);
+      } catch (e) {
+        rec.abandoned = e.message.slice(0, 300);
+        j.set(all);
+        throw new Error(`asset lock ${rec.txid} could not be broadcast and was set aside (${rec.abandoned}); run the command again to build a new one`);
+      }
       rec.state = 'broadcast';
       j.set(all);
       this.log(`asset lock ${rec.txid} broadcast (${rec.duffs} duffs, fee ${rec.fee})`);

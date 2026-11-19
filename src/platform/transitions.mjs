@@ -16,6 +16,89 @@ export const DEFAULT_CONTRACT_CONFIG = {
   sizedIntegerTypes: true,
 };
 
+const ID = /^[1-9A-HJ-NP-Za-km-z]{42,44}$/;
+const UINT = /^(0|[1-9][0-9]{0,19})$/;
+const isInt = (v, max = Number.MAX_SAFE_INTEGER) => Number.isSafeInteger(v) && v >= 0 && v <= max;
+const isUint = (v) => typeof v === 'string' && UINT.test(v);
+const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+const KEY_FIELDS = ['cid', 'slot', 'keyId', 'purpose', 'securityLevel', 'publicKey'];
+
+function exactly(obj, required, optional = []) {
+  assert(isObj(obj), 'expected an object');
+  const allowed = new Set([...required, ...optional]);
+  for (const k of Object.keys(obj)) assert(allowed.has(k), `unexpected field "${k}"`);
+  for (const k of required) assert(Object.hasOwn(obj, k), `missing field "${k}"`);
+}
+
+const checkSigner = (s) => {
+  exactly(s, ['keyId', 'cid', 'slot']);
+  assert(isInt(s.keyId, 999) && isHex(s.cid, 32) && typeof s.slot === 'string', 'bad signer');
+};
+
+const checkKeys = (list) => {
+  assert(Array.isArray(list) && list.length <= 16, 'keys must be a list');
+  for (const k of list) {
+    exactly(k, KEY_FIELDS);
+    assert(isHex(k.cid, 32) && typeof k.slot === 'string' && isInt(k.keyId, 999) && typeof k.purpose === 'string' && typeof k.securityLevel === 'string' && isHex(k.publicKey, 48), 'bad key entry');
+  }
+  assert(new Set(list.map((k) => k.keyId)).size === list.length, 'duplicate key ids');
+};
+
+const COMMON = ['type', 'userFeeIncrease'];
+const SHAPES = {
+  'identity-create': { required: [...COMMON, 'assetLockProof', 'keys'] },
+  'identity-update': { required: [...COMMON, 'identityId', 'revision', 'nonce', 'addKeys', 'disableKeyIds', 'signer'] },
+  'contract-create': { required: [...COMMON, 'ownerId', 'identityNonce', 'protocolVersion', 'contract', 'signer'] },
+  'contract-update': { required: [...COMMON, 'ownerId', 'contractId', 'identityContractNonce', 'version', 'protocolVersion', 'contract', 'signer'] },
+  document: { required: [...COMMON, 'ownerId', 'contractId', 'identityContractNonce', 'document', 'signer'] },
+  'credit-transfer': { required: [...COMMON, 'identityId', 'recipientId', 'amount', 'nonce', 'signer'] },
+  'credit-withdrawal': { required: [...COMMON, 'identityId', 'amount', 'coreFeePerByte', 'pooling', 'outputAddress', 'outputPubKeyHash', 'nonce', 'signer'] },
+};
+
+export function validateIntent(intent) {
+  assert(isObj(intent) && Object.hasOwn(SHAPES, intent.type), `unknown intent type ${intent?.type}`);
+  exactly(intent, SHAPES[intent.type].required);
+  assert(isInt(intent.userFeeIncrease, 65535), 'bad userFeeIncrease');
+  for (const f of ['identityId', 'ownerId', 'contractId', 'recipientId']) if (Object.hasOwn(intent, f)) assert(typeof intent[f] === 'string' && ID.test(intent[f]), `bad ${f}`);
+  for (const f of ['revision', 'nonce', 'identityNonce', 'identityContractNonce', 'amount']) if (Object.hasOwn(intent, f)) assert(isUint(intent[f]), `bad ${f}`);
+  if (intent.signer !== undefined) checkSigner(intent.signer);
+  switch (intent.type) {
+    case 'identity-create':
+      exactly(intent.assetLockProof, ['coreChainLockedHeight', 'txid', 'vout', 'keyIndex', 'funder']);
+      assert(isInt(intent.assetLockProof.coreChainLockedHeight) && isHex(intent.assetLockProof.txid, 32) && isInt(intent.assetLockProof.vout) && isInt(intent.assetLockProof.keyIndex) && isHex(intent.assetLockProof.funder, 32), 'bad asset lock proof');
+      checkKeys(intent.keys);
+      assert(intent.keys.length >= 1, 'identity needs keys');
+      break;
+    case 'identity-update':
+      checkKeys(intent.addKeys);
+      assert(Array.isArray(intent.disableKeyIds) && intent.disableKeyIds.every((id) => isInt(id, 999)), 'bad disableKeyIds');
+      break;
+    case 'contract-create':
+    case 'contract-update':
+      assert(isInt(intent.protocolVersion, 1000) && isObj(intent.contract) && isObj(intent.contract.documentSchemas), 'bad contract');
+      if (intent.type === 'contract-update') assert(isInt(intent.version), 'bad version');
+      break;
+    case 'document':
+      exactly(intent.document, ['action', 'documentType'], ['properties', 'entropy', 'id', 'revision']);
+      assert(['create', 'replace', 'delete'].includes(intent.document.action) && typeof intent.document.documentType === 'string', 'bad document');
+      if (intent.document.action !== 'create') assert(typeof intent.document.id === 'string' && ID.test(intent.document.id), 'bad document id');
+      if (intent.document.properties !== undefined) assert(isObj(intent.document.properties), 'bad document properties');
+      break;
+    case 'credit-withdrawal':
+      assert(isInt(intent.coreFeePerByte, 1 << 20) && typeof intent.pooling === 'string' && typeof intent.outputAddress === 'string' && isHex(intent.outputPubKeyHash, 20), 'bad withdrawal');
+      break;
+    default:
+      break;
+  }
+  return intent;
+}
+
+export function keysAdded(intent) {
+  if (intent.type === 'identity-create') return intent.keys;
+  if (intent.type === 'identity-update') return intent.addKeys;
+  return [];
+}
+
 export function requirementsFor(intent) {
   switch (intent.type) {
     case 'identity-create':
@@ -63,7 +146,7 @@ function contractJson(intent, id, version) {
 
 export async function buildTransition(intent, { popSignatures = {} } = {}) {
   const m = await sdkModule();
-  assert(INTENT_TYPES.includes(intent.type), `unknown intent type ${intent.type}`);
+  validateIntent(intent);
   const fee = intent.userFeeIncrease ?? 0;
   let st;
   let derived = {};
@@ -204,7 +287,7 @@ export function describeIntent(intent) {
 export async function assembleSigned(intent, signatures) {
   const sig = (r) => signatures[`${r.cid}/${r.slot}`]?.signature;
   const pops = {};
-  for (const k of intent.keys ?? intent.addKeys ?? []) {
+  for (const k of keysAdded(intent)) {
     pops[k.keyId] = sig(k);
     assert(pops[k.keyId], `missing proof-of-possession signature for key ${k.keyId}`);
   }

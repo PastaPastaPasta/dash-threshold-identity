@@ -1,7 +1,7 @@
 import { sha512 } from '@noble/hashes/sha2.js';
 import { digest, isHex, lengthPrefixed, assert, hex, unhex, ROOM_PATTERN } from './util.mjs';
 import { dkgCoefficients, deterministicNonce } from './derive.mjs';
-import { G1, g1, g1Hex, mod, bytesToScalar, evalPoly, evalCommitments, scalarToHex, scalarFromHex } from './bls.mjs';
+import { G1, g1, g1Hex, mod, bytesToScalar, evalPoly, evalCommitments, scalarToHex, scalarFromHex, R as ORDER } from './bls.mjs';
 import { boxContext, encryptBox, decryptWithKey, boxKeys, PROTOCOL } from './envelope.mjs';
 
 export const PURPOSES = ['AUTHENTICATION', 'ENCRYPTION', 'DECRYPTION', 'TRANSFER', 'VOTING', 'OWNER'];
@@ -121,12 +121,16 @@ export function buildReveal(seed, keys, config, cid) {
 
 export const revealDigest = (reveal) => digest({ reveal });
 
+const sameKeys = (o, keys) => o !== null && typeof o === 'object' && !Array.isArray(o) && Object.keys(o).sort().join('\u0000') === [...keys].sort().join('\u0000');
+
 export function checkRevealShape(config, cid, reveal, index) {
   const problems = [];
+  if (!sameKeys(reveal, ['cid', 'index', 'slots']) || !sameKeys(reveal.slots, config.keys.map((k) => k.slot))) return ['reveal has missing or unexpected fields'];
   if (reveal.cid !== cid || reveal.index !== index) problems.push('reveal is for another ceremony or index');
   for (const { slot } of config.keys) {
-    const s = reveal.slots?.[slot];
-    if (!s) { problems.push(`missing slot ${slot}`); continue; }
+    const s = reveal.slots[slot];
+    if (!sameKeys(s, ['commitments', 'pok', 'boxes']) || !sameKeys(s.pok, ['R', 'z']) || !isHex(s.pok.z, 32) || !isHex(s.pok.R, 48)) { problems.push(`${slot}: malformed`); continue; }
+    if (!Array.isArray(s.commitments) || !s.commitments.every((c) => isHex(c, 48)) || !Object.values(s.boxes ?? {}).every((b) => isHex(b))) { problems.push(`${slot}: malformed`); continue; }
     if (!Array.isArray(s.commitments) || s.commitments.length !== config.threshold) problems.push(`${slot}: expected ${config.threshold} commitments`);
     else if (!pokVerify(s.commitments[0], s.pok, cid, slot, index)) problems.push(`${slot}: bad proof of knowledge`);
     else if (G1.fromHex(s.commitments[config.threshold - 1]).equals(G1.ZERO)) problems.push(`${slot}: degenerate polynomial (top coefficient is zero)`);
@@ -153,9 +157,14 @@ export function receiveShares(seed, keys, config, cid, reveals) {
       const evidence = { key: hex(material.key), nonce: hex(material.nonce) };
       let value;
       try {
-        value = scalarFromHex(decryptWithKey(material.key, material.nonce, ctx, s.boxes[me]));
+        value = decryptWithKey(material.key, material.nonce, ctx, s.boxes[me]);
       } catch {
         complaints.push({ against: p.index, slot, reason: 'share box does not decrypt', evidence });
+        continue;
+      }
+      value = parseShare(value);
+      if (value === null) {
+        complaints.push({ against: p.index, slot, reason: 'share is not a valid scalar', evidence });
         continue;
       }
       if (!g1(value).equals(evalCommitments(s.commitments, me))) {
@@ -198,25 +207,36 @@ export function buildCompletion(config, cid, reveals, revealDigests, shares) {
   }
   return {
     cid,
+    reveals: config.participants.map((p) => revealDigests[p.index]),
     transcript: transcriptDigest(cid, config, revealDigests),
     keys: Object.fromEntries(Object.entries(keysOut).map(([slot, k]) => [slot, { groupPublicKey: k.groupPublicKey, publicSharesDigest: digest(k.publicShares) }])),
   };
 }
 
+function parseShare(text) {
+  if (!/^[0-9a-f]{64}$/.test(text)) return null;
+  const v = BigInt(`0x${text}`);
+  return v < ORDER ? v : null;
+}
+
 export function judgeComplaint(config, cid, complaint, reveal) {
+  const accuser = config.participants.find((p) => p.index === complaint.from);
+  const accused = config.participants.find((p) => p.index === complaint.against);
+  if (!accuser || !accused || accuser === accused || !reveal) return 'unproven';
+  if (!config.keys.some((k) => k.slot === complaint.slot)) return 'unproven';
+  const box = reveal.slots[complaint.slot].boxes[String(accuser.index)];
+  const e = complaint.evidence;
+  if (typeof box !== 'string' || !e || !isHex(e.key, 32) || !isHex(e.nonce, 12)) return 'unproven';
+  const ctx = boxContext({ cid, slot: complaint.slot, from: accused.index, to: accuser.index, fromTransport: accused.transportPub, toTransport: accuser.transportPub });
+  let text;
   try {
-    const accuser = config.participants.find((p) => p.index === complaint.from);
-    const accused = config.participants.find((p) => p.index === complaint.against);
-    const box = reveal?.slots?.[complaint.slot]?.boxes?.[complaint.from];
-    if (!accuser || !accused || !reveal) return 'unproven';
-    if (!box) return 'proven';
-    if (!complaint.evidence) return 'unproven';
-    const ctx = boxContext({ cid, slot: complaint.slot, from: accused.index, to: accuser.index, fromTransport: accused.transportPub, toTransport: accuser.transportPub });
-    const value = scalarFromHex(decryptWithKey(unhex(complaint.evidence.key), unhex(complaint.evidence.nonce), ctx, box));
-    return g1(value).equals(evalCommitments(reveal.slots[complaint.slot].commitments, accuser.index)) ? 'false' : 'proven';
+    text = decryptWithKey(unhex(e.key), unhex(e.nonce), ctx, box);
   } catch {
     return 'unproven';
   }
+  const value = parseShare(text);
+  if (value === null) return 'proven';
+  return g1(value).equals(evalCommitments(reveal.slots[complaint.slot].commitments, accuser.index)) ? 'false' : 'proven';
 }
 
 export const publicShareOf = (share) => g1Hex(g1(share));

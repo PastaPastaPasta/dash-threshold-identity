@@ -25,6 +25,22 @@ test('the relay stores signed envelopes once and pages them in order', async () 
   assert.equal(page.next, 2);
 });
 
+test('only the room creator and ceremony members can post beyond a hello', async () => {
+  const [owner, member] = ps;
+  const outsider = people(3)[2];
+  const room = 'pinned-room-test';
+  const post = async (env) => (await call('POST', `/v1/rooms/${room}/messages`, env)).status;
+  assert.equal(await post(sealEnvelope(outsider.keys, room, 'proposal', { x: 1 })), 403);
+  assert.equal(await post(hello(owner.keys, room, 'owner')), 200);
+  assert.equal(await post(hello(member.keys, room, 'member')), 200);
+  assert.equal(await post(hello(outsider.keys, room, 'outsider')), 200);
+  assert.equal(await post(sealEnvelope(member.keys, room, 'config', { config: { participants: [{ authPub: outsider.keys.authPub }] } })), 403);
+  assert.equal(await post(sealEnvelope(outsider.keys, room, 'proposal', { x: 2 })), 403);
+  assert.equal(await post(sealEnvelope(owner.keys, room, 'config', { config: { participants: [{ authPub: owner.keys.authPub }, { authPub: member.keys.authPub }] } })), 200);
+  assert.equal(await post(sealEnvelope(member.keys, room, 'accept', { cid: 'x' })), 200);
+  assert.equal(await post(sealEnvelope(outsider.keys, room, 'accept', { cid: 'x' })), 403);
+});
+
 test('the relay refuses forged, misrouted and malformed messages', async () => {
   const forged = { ...hello(ps[0].keys, ROOM, 'a'), body: { name: 'mallory', transportPub: ps[1].keys.transportPub } };
   assert.equal((await call('POST', `/v1/rooms/${ROOM}/messages`, forged)).status, 400);
@@ -43,7 +59,9 @@ test('the Node relay keeps messages on disk across restarts', async () => {
   server.close();
   server = await serveRelay({ port: 0, dir });
   const page = await (await fetch(`${url(server)}?after=0`)).json();
+  const outsider = await fetch(url(server), { method: 'POST', body: JSON.stringify(sealEnvelope(ps[1].keys, ROOM, 'proposal', { x: 1 })) });
   server.close();
   assert.equal(page.messages.length, 1);
+  assert.equal(outsider.status, 403);
   fs.rmSync(dir, { recursive: true });
 });

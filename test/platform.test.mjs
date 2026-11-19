@@ -18,7 +18,7 @@ const OWNER = '7nVXwBc8CH98WmLBHWbE3QooBhEdw5j6Eqie3MN39fKY';
 
 const identityCreate = {
   type: 'identity-create',
-  assetLockProof: { coreChainLockedHeight: 1594732, txid: '4fef4dde120ee8e24d0c8d020eb0e9ab38a6d7b77ccbe0866efb596f38ecdc1d', vout: 0, keyIndex: 0 },
+  assetLockProof: { coreChainLockedHeight: 1594732, txid: '4fef4dde120ee8e24d0c8d020eb0e9ab38a6d7b77ccbe0866efb596f38ecdc1d', vout: 0, keyIndex: 0, funder: ps[0].keys.authPub },
   keys: Object.values(keys).map((k) => ({ cid, slot: k.slot, keyId: k.keyId, purpose: k.purpose, securityLevel: k.securityLevel, publicKey: k.groupPublicKey })),
   userFeeIncrease: 0,
 };
@@ -79,7 +79,7 @@ test('review catches a key that is not the group key, a wrong network and a too-
   ({ s, id } = await withProposal(await makeProposalBody('mainnet', contractCreate)));
   assert.ok((await reviewProposal(s, id)).problems.some((p) => /is for testnet/.test(p)));
 
-  ({ s, id } = await withProposal(await makeProposalBody('testnet', { ...contractCreate, type: 'contract-update', contractId: OWNER, identityContractNonce: '2', version: 2, signer: { keyId: 2, cid, slot: 'high' } })));
+  ({ s, id } = await withProposal(await makeProposalBody('testnet', { type: 'contract-update', ownerId: OWNER, contractId: OWNER, identityContractNonce: '2', version: 2, protocolVersion: 14, userFeeIncrease: 0, contract: contractCreate.contract, signer: { keyId: 2, cid, slot: 'high' } })));
   assert.ok((await reviewProposal(s, id)).problems.some((p) => /cannot be signed by a AUTHENTICATION\/HIGH key/.test(p)));
 });
 
@@ -100,6 +100,20 @@ test('review names who will control keys a proposal adds, and fails closed witho
   assert.match(offline.attention[0], /3-of-5/);
   const online = await reviewProposal(s, id, { online: true, sdk: null });
   assert.ok(online.problems.some((p) => /could not reach Platform/.test(p)));
+});
+
+test('an identity update cannot hide added keys from review', async () => {
+  const sneaky = { type: 'identity-update', identityId: OWNER, revision: '1', nonce: '2', userFeeIncrease: 0, signer: { keyId: 0, cid, slot: 'master' }, disableKeyIds: [], keys: [], addKeys: [{ cid, slot: 'high', keyId: 7, purpose: 'AUTHENTICATION', securityLevel: 'MASTER', publicKey: keys.critical.groupPublicKey }] };
+  let { s, id } = await withProposal({ network: 'testnet', intent: sneaky, unsigned: '00', signable: '00', requirements: [{ cid, slot: 'master' }, { cid, slot: 'high' }], derived: {} });
+  let r = await reviewProposal(s, id);
+  assert.equal(r.ok, false);
+  assert.match(r.problems[0], /unexpected field "keys"/);
+  const { keys: _ignored, ...plain } = sneaky;
+  ({ s, id } = await withProposal(await makeProposalBody('testnet', plain)));
+  r = await reviewProposal(s, id);
+  assert.ok(r.problems.some((p) => /not the group key of high/.test(p)));
+  assert.ok(r.problems.some((p) => /differ from what the ceremony agreed/.test(p)));
+  assert.equal(r.attention.length, 1);
 });
 
 test('three approvals assemble a signed identity create whose proofs verify and whose signable bytes are unchanged', async () => {
