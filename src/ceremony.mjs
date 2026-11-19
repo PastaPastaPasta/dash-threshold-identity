@@ -7,6 +7,8 @@ import { boxContext, encryptBox, decryptWithKey, boxKeys, PROTOCOL } from './env
 export const PURPOSES = ['AUTHENTICATION', 'ENCRYPTION', 'DECRYPTION', 'TRANSFER', 'VOTING', 'OWNER'];
 export const SECURITY_LEVELS = ['MASTER', 'CRITICAL', 'HIGH', 'MEDIUM'];
 export const NETWORKS = ['testnet', 'mainnet'];
+const MAX_REVEAL_BYTES = 240 * 1024;
+export const estimatedRevealSize = (n, t, slots) => 400 + slots * (300 + t * 100 + (n - 1) * 180);
 export const SLOT_PATTERN = /^[a-z][a-z0-9-]{0,31}$/;
 
 export const DEFAULT_KEYS = [
@@ -64,6 +66,7 @@ export function validateConfig(config) {
     ids.add(k.keyId);
   }
   assert(slots.size === config.keys.length && ids.size === config.keys.length, 'slot names and keyIds must be unique');
+  assert(estimatedRevealSize(n, config.threshold, config.keys.length) <= MAX_REVEAL_BYTES, 'too many members or key slots: a member\'s key-ceremony message would not fit in one relay message');
   return config;
 }
 
@@ -124,6 +127,14 @@ export const revealDigest = (reveal) => digest({ reveal });
 const sameKeys = (o, keys) => o !== null && typeof o === 'object' && !Array.isArray(o) && Object.keys(o).sort().join('\u0000') === [...keys].sort().join('\u0000');
 
 export function checkRevealShape(config, cid, reveal, index) {
+  try {
+    return revealShapeProblems(config, cid, reveal, index);
+  } catch (e) {
+    return [`malformed reveal: ${e.message}`];
+  }
+}
+
+function revealShapeProblems(config, cid, reveal, index) {
   const problems = [];
   if (!sameKeys(reveal, ['cid', 'index', 'slots']) || !sameKeys(reveal.slots, config.keys.map((k) => k.slot))) return ['reveal has missing or unexpected fields'];
   if (reveal.cid !== cid || reveal.index !== index) problems.push('reveal is for another ceremony or index');

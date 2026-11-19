@@ -15,8 +15,8 @@ const MAX_FEE = 100000;
 
 const insight = (network) => process.env.DTI_INSIGHT_URL || INSIGHT[network];
 
-async function getJson(url, init) {
-  const response = await fetch(url, init);
+async function getJson(url, init = {}) {
+  const response = await fetch(url, { ...init, signal: AbortSignal.timeout(30000) });
   const text = await response.text();
   if (response.status === 404) return null;
   if (!response.ok) throw new Error(`${url} -> ${response.status} ${text.slice(0, 300)}`);
@@ -95,11 +95,12 @@ export function buildAssetLock({ network, funding, utxoList, creditAddress, duff
 
 export async function waitForChainLock(network, sdk, txid, { timeoutMs = 20 * 60 * 1000, onWait } = {}) {
   const start = Date.now();
-  let height = null;
   while (Date.now() - start < timeoutMs) {
-    const tx = await fetchTx(network, txid).catch(() => null);
-    if (tx?.blockheight > 0) height = tx.blockheight;
-    if (height) {
+    const tx = await fetchTx(network, txid).catch(() => undefined);
+    const height = tx?.blockheight > 0 ? tx.blockheight : null;
+    if (tx === undefined) {
+      onWait?.('Insight did not answer; retrying');
+    } else if (height) {
       const status = await retry(() => sdk.system.status());
       const j = status.toJSON();
       const locked = Number(j.chain?.coreChainLockedHeight ?? 0);

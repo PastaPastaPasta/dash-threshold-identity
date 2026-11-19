@@ -31,8 +31,42 @@ export function loadRoom(room) {
   return readJson(roomFile(room), null);
 }
 
+const pause = new Int32Array(new SharedArrayBuffer(4));
+
+function withLock(file, fn) {
+  const lock = `${file}.lock`;
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  const deadline = Date.now() + 15000;
+  for (;;) {
+    try {
+      fs.mkdirSync(lock);
+      break;
+    } catch (e) {
+      if (e.code !== 'EEXIST') throw e;
+      if (Date.now() - fs.statSync(lock, { throwIfNoEntry: false })?.mtimeMs > 30000) fs.rmSync(lock, { recursive: true, force: true });
+      assert(Date.now() < deadline, `room file is locked by another process (${lock})`);
+      Atomics.wait(pause, 0, 0, 50);
+    }
+  }
+  try {
+    return fn();
+  } finally {
+    fs.rmSync(lock, { recursive: true, force: true });
+  }
+}
+
+function merged(data, onDisk) {
+  if (!onDisk) return data.messages;
+  const ids = new Set(data.messages.map(envelopeId));
+  return [...data.messages, ...onDisk.messages.filter((m) => !ids.has(envelopeId(m)))];
+}
+
 export function saveRoom(data) {
-  writeJson(roomFile(data.room), data);
+  const file = roomFile(data.room);
+  withLock(file, () => {
+    data.messages = merged(data, readJson(file, null));
+    writeJson(file, data);
+  });
 }
 
 export function openRoom(room, { relay, label } = {}) {

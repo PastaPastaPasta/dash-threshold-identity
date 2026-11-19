@@ -7,6 +7,14 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const short = (s, n = 12) => (s && s.length > n ? `${s.slice(0, n)}…` : s ?? '');
 let state = null;
 let busy = false;
+const unchecked = new Set();
+
+function setOptions(el, html) {
+  if (el.innerHTML === html) return;
+  const before = el.value;
+  el.innerHTML = html;
+  if (before && [...el.options].some((o) => o.value === before)) el.value = before;
+}
 
 async function api(method, path, body) {
   const url = method === 'GET' && body ? `${path}?${new URLSearchParams(body)}` : path;
@@ -62,17 +70,18 @@ const statusChip = (s) => {
 
 function renderRoom() {
   $('#me').innerHTML = state.me ? `You: <span class="fp">${esc(state.me.fingerprint)}</span>` : '';
-  $('#room-select').innerHTML = (state.rooms ?? []).map((r) => `<option value="${esc(r.room)}" ${r.room === state.room ? 'selected' : ''}>${esc(r.label ?? r.room)} (${r.messages} messages)</option>`).join('');
+  setOptions($('#room-select'), (state.rooms ?? []).map((r) => `<option value="${esc(r.room)}" ${r.room === state.room ? 'selected' : ''}>${esc(r.label ?? r.room)} (${r.messages} messages)</option>`).join(''));
   $('#room-info').innerHTML = state.room
     ? `Room <code>${esc(state.room)}</code><br>Relay: ${state.relay ? `<code>${esc(state.relay)}</code>` : 'none (exchange bundles as files)'}${state.invalidMessages ? `<br><span class="chip bad">${state.invalidMessages} invalid messages ignored</span>` : ''}`
     : 'No room selected.';
   $('#members').innerHTML = `<tr><th>Name</th><th>Fingerprint</th><th>Key</th></tr>${(state.members ?? []).map((m) => `<tr><td>${esc(m.name)}${m.me ? ' <span class="chip">you</span>' : ''}</td><td class="fp">${esc(m.fingerprint)}</td><td class="mono">${esc(short(m.authPub, 20))}</td></tr>`).join('')}`;
-  $('#ceremony-members').innerHTML = (state.members ?? []).map((m) => `<label><input type="checkbox" name="member" value="${esc(m.authPub)}" checked> ${esc(m.name)}</label>`).join('');
+  const members = (state.members ?? []).map((m) => `<label><input type="checkbox" name="member" value="${esc(m.authPub)}"${unchecked.has(m.authPub) ? '' : ' checked'}> ${esc(m.name)}</label>`).join('');
+  if ($('#ceremony-members').innerHTML !== members) $('#ceremony-members').innerHTML = members;
 }
 
 function renderCeremonies() {
   const list = state.ceremonies ?? [];
-  $('#identity-cid').innerHTML = list.filter((c) => c.status === 'complete').map((c) => `<option value="${esc(c.cid)}">${esc(c.label)} (${esc(short(c.cid))})</option>`).join('');
+  setOptions($('#identity-cid'), list.filter((c) => c.status === 'complete').map((c) => `<option value="${esc(c.cid)}">${esc(c.label)} (${esc(short(c.cid))})</option>`).join(''));
   $('#ceremonies').innerHTML = list.slice().reverse().map((c) => `
     <div class="card">
       <h2>${esc(c.label)} ${statusChip(c.status)}</h2>
@@ -91,7 +100,7 @@ function renderCeremonies() {
 
 function renderIdentities() {
   const ids = state.identities ?? [];
-  $('#propose-identity').innerHTML = ids.map((i) => `<option value="${esc(i.identityId)}">${esc(i.identityId)}</option>`).join('');
+  setOptions($('#propose-identity'), ids.map((i) => `<option value="${esc(i.identityId)}">${esc(i.identityId)}</option>`).join(''));
   $('#identities').innerHTML = ids.map((i) => `
     <div class="card">
       <h2>Identity <code>${esc(i.identityId)}</code></h2>
@@ -152,6 +161,12 @@ async function refresh() {
   renderIdentities();
   renderProposals();
 }
+
+$('#ceremony-members').addEventListener('change', (e) => {
+  if (e.target.name !== 'member') return;
+  if (e.target.checked) unchecked.delete(e.target.value);
+  else unchecked.add(e.target.value);
+});
 
 const formData = (form) => Object.fromEntries(new FormData(form).entries());
 

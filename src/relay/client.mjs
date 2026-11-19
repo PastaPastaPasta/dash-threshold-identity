@@ -34,10 +34,22 @@ export async function push(data, envelopes) {
 
 export async function sync(data) {
   if (!data.relay) return { pulled: 0, pushed: 0 };
-  const pulled = await pull(data);
+  let pulled = await pull(data);
   const page = await call(`${base(data.relay, data.room)}?after=0&idsOnly=1`);
   const remote = new Set(page.ids ?? []);
+  const local = new Set(data.messages.map(envelopeId));
+  if ([...remote].some((id) => !local.has(id))) {
+    data.cursors[data.relay] = 0;
+    pulled += await pull(data);
+  }
   const missing = data.messages.filter((m) => !remote.has(envelopeId(m)));
-  await push(data, missing);
-  return { pulled, pushed: missing.length };
+  const refused = [];
+  for (const m of missing) {
+    try {
+      await push(data, [m]);
+    } catch (e) {
+      refused.push(e.message);
+    }
+  }
+  return { pulled, pushed: missing.length - refused.length, refused };
 }

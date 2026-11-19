@@ -186,6 +186,16 @@ test('flooding valid alternative reveals after completion cannot undo it', () =>
   assert.deepEqual(c.result, base.state.ceremonies[base.cid].result);
 });
 
+test('a later reveal with an undecodable point is set aside, not fatal', () => {
+  const messages = [...base.messages];
+  const mine = base.messages.find((m) => m.type === 'dkg-reveal' && m.from === ps[3].keys.authPub);
+  const alt = JSON.parse(JSON.stringify(mine.body));
+  alt.reveal.slots.master.commitments[2] = 'ff'.repeat(48);
+  messages.push(sealEnvelope(ps[3].keys, ROOM, 'dkg-commit', { cid: base.cid, digest: revealDigest(alt.reveal) }));
+  messages.push(sealEnvelope(ps[3].keys, ROOM, 'dkg-reveal', alt));
+  assert.equal(reduce(messages).ceremonies[base.cid].status, 'complete');
+});
+
 test('complaints cannot frame anyone with a bogus slot or against themselves', () => {
   const c0 = base.state.ceremonies[base.cid];
   const ev = { key: '00'.repeat(32), nonce: '00'.repeat(12) };

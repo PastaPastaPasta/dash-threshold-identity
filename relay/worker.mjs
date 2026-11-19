@@ -1,5 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
-import { handle, handleRoom, json, parseRoute } from '../src/relay/core.mjs';
+import { handle, handleRoom, json, parseRoute, admit } from '../src/relay/core.mjs';
 
 export class Room extends DurableObject {
   constructor(ctx, env) {
@@ -13,6 +13,14 @@ export class Room extends DurableObject {
   async fetch(request) {
     const room = request.headers.get('x-dti-room');
     const sql = this.sql;
+    if (!sql.exec("SELECT 1 FROM meta WHERE k = 'policy'").toArray().length && sql.exec('SELECT COUNT(*) AS n FROM messages').one().n > 0) {
+      let policy = null;
+      for (const row of sql.exec('SELECT body FROM messages ORDER BY seq').toArray()) {
+        const verdict = admit(policy, JSON.parse(row.body));
+        if (verdict.ok) policy = verdict.next;
+      }
+      sql.exec("INSERT INTO meta (k, v) VALUES ('policy', ?)", JSON.stringify(policy));
+    }
     const store = {
       async append(_room, id, body, from) {
         const existing = sql.exec('SELECT seq FROM messages WHERE id = ?', id).toArray();

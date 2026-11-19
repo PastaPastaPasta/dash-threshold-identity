@@ -1,7 +1,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
-import { handle, memoryStore, admit } from './core.mjs';
+import { handle, memoryStore, admit, MAX_MESSAGE_BYTES } from './core.mjs';
 
 export function fileStore(dir) {
   const mem = memoryStore();
@@ -10,8 +10,10 @@ export function fileStore(dir) {
   const loaded = new Set();
   const load = (room) => {
     if (loaded.has(room)) return;
-    loaded.add(room);
-    if (!fs.existsSync(file(room))) return;
+    if (!fs.existsSync(file(room))) {
+      loaded.add(room);
+      return;
+    }
     const r = { rows: [], ids: new Set(), policy: null };
     for (const line of fs.readFileSync(file(room), 'utf8').split('\n').filter(Boolean)) {
       const row = JSON.parse(line);
@@ -21,12 +23,18 @@ export function fileStore(dir) {
       if (verdict.ok) r.policy = verdict.next;
     }
     mem.rooms.set(room, r);
+    loaded.add(room);
   };
   return {
     async append(room, id, body, from) {
       load(room);
-      const seq = await mem.append(room, id, body, from);
-      if (seq !== null) fs.appendFileSync(file(room), `${JSON.stringify({ seq, id, body, from })}\n`);
+      if (!mem.rooms.has(room)) mem.rooms.set(room, { rows: [], ids: new Set(), policy: null });
+      const r = mem.rooms.get(room);
+      if (r.ids.has(id)) return null;
+      const seq = r.rows.length + 1;
+      fs.appendFileSync(file(room), `${JSON.stringify({ seq, id, body, from })}\n`);
+      r.ids.add(id);
+      r.rows.push({ seq, id, body, from });
       return seq;
     },
     async countFrom(room, from) { load(room); return mem.countFrom(room, from); },
@@ -39,9 +47,17 @@ export function fileStore(dir) {
   };
 }
 
-export async function toRequest(req, origin) {
+export async function toRequest(req, origin, limit = MAX_MESSAGE_BYTES + 1024) {
   const chunks = [];
-  for await (const c of req) chunks.push(c);
+  let size = 0;
+  for await (const c of req) {
+    size += c.length;
+    if (size > limit) {
+      req.destroy();
+      throw Object.assign(new Error('message too large'), { status: 413 });
+    }
+    chunks.push(c);
+  }
   const body = chunks.length ? Buffer.concat(chunks) : undefined;
   return new Request(new URL(req.url, origin), { method: req.method, headers: req.headers, body: ['GET', 'HEAD'].includes(req.method) ? undefined : body });
 }
@@ -57,7 +73,7 @@ export function serveRelay({ port = 8787, host = '127.0.0.1', dir = null } = {})
     try {
       await sendResponse(res, await handle(await toRequest(req, `http://${host}:${port}`), async () => store));
     } catch (e) {
-      res.writeHead(500, { 'content-type': 'application/json' });
+      res.writeHead(e.status ?? 500, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ error: e.message }));
     }
   });

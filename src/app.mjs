@@ -240,16 +240,22 @@ export class Session {
     return { address, duffs: list.reduce((a, u) => a + u.satoshis, 0), utxos: list.length };
   }
 
+  assetLockJournal(network) {
+    return journal(`asset-locks-${network}-${this.keys.authPub.slice(0, 16)}`);
+  }
+
   async assetLock(network, { duffs, kind = 'registration', index, confirmMainnet = false }) {
     assert(network !== 'mainnet' || confirmMainnet, 'this locks real DASH on mainnet; confirm it explicitly (--confirm-mainnet)');
-    const j = journal(`asset-locks-${network}-${this.keys.authPub.slice(0, 16)}`);
+    const j = this.assetLockJournal(network);
     const all = j.get();
     if (index !== undefined) assert(!all[`${kind}/${index}`]?.usedBy, `asset lock ${kind}/${index} was already used`);
-    let rec = Object.values(all).find((r) => r.kind === kind && !r.usedBy && !r.abandoned && (index === undefined ? r.duffs === duffs : r.index === index)) ?? null;
+    let rec = index !== undefined ? (all[`${kind}/${index}`] ?? null) : (Object.values(all).find((r) => r.kind === kind && !r.usedBy && !r.abandoned && r.duffs === duffs) ?? null);
+    if (rec?.abandoned) delete rec.abandoned;
     if (rec) this.log(`resuming asset lock ${rec.txid} (${rec.duffs} duffs, ${rec.state})`);
     if (!rec) {
       assert(Number.isSafeInteger(duffs) && duffs >= 100000, 'lock at least 100000 duffs');
       const keyIndex = index ?? Object.values(all).filter((r) => r.kind === kind).reduce((m, r) => Math.max(m, r.index + 1), 0);
+      assert(!all[`${kind}/${keyIndex}`], `asset lock ${kind}/${keyIndex} already exists`);
       const credit = kind === 'registration' ? core.registrationKey(this.seed, network, keyIndex) : core.topUpKey(this.seed, network, keyIndex);
       const account = core.fundingAccount(this.seed, network);
       const built = core.buildAssetLock({ network, funding: account, utxoList: await core.verifiedUtxos(network, account.address), creditAddress: credit.address, duffs });
@@ -258,12 +264,18 @@ export class Session {
       j.set(all);
     }
     if (rec.state === 'built') {
-      try {
-        if (!(await core.fetchTx(network, rec.txid))) await core.broadcastRaw(network, rec.rawtx);
-      } catch (e) {
-        rec.abandoned = e.message.slice(0, 300);
-        j.set(all);
-        throw new Error(`asset lock ${rec.txid} could not be broadcast and was set aside (${rec.abandoned}); run the command again to build a new one`);
+      const known = await core.fetchTx(network, rec.txid);
+      if (!known) {
+        try {
+          await core.broadcastRaw(network, rec.rawtx);
+        } catch (e) {
+          if (!(await core.fetchTx(network, rec.txid)) && /missing|spent|conflict|rejected|input/i.test(e.message)) {
+            rec.abandoned = e.message.slice(0, 300);
+            j.set(all);
+            throw new Error(`asset lock ${rec.txid} was rejected and set aside (${rec.abandoned}); run the command again to build a new one`);
+          }
+          throw new Error(`could not broadcast asset lock ${rec.txid} yet (${e.message.slice(0, 200)}); run the command again to retry it`);
+        }
       }
       rec.state = 'broadcast';
       j.set(all);
@@ -275,11 +287,11 @@ export class Session {
       Object.assign(rec, { coreChainLockedHeight: lock.coreChainLockedHeight, height: lock.height, state: 'chainlocked' });
       j.set(all);
     }
-    const markUsed = (by) => {
-      rec.usedBy = by;
+    const mark = (field, value) => {
+      rec[field] = value;
       j.set(all);
     };
-    return { ...rec, markUsed };
+    return { ...rec, markProposed: (by) => mark('proposedBy', by), markUsed: (by) => mark('usedBy', by) };
   }
 
   async proposeIdentityCreate({ cid, duffs, index, confirmMainnet = false }) {
@@ -295,7 +307,7 @@ export class Session {
       userFeeIncrease: 0,
     };
     const out = await this.propose(network, intent, `funded with ${lock.duffs} duffs`);
-    lock.markUsed(out.id);
+    lock.markProposed(out.id);
     return out;
   }
 
@@ -409,6 +421,7 @@ export class Session {
     const intent = p.body.intent;
     if (intent.type === 'identity-create') {
       assert(intent.assetLockProof.funder === this.keys.authPub, 'only the funder who built the asset lock can finalize identity creation');
+      assert(built.derived.identityId === p.body.derived.identityId, 'identity id mismatch');
       await core.signWithAssetLockKey(built.st, core.registrationKey(this.seed, p.body.network, intent.assetLockProof.keyIndex));
     }
     const sdk = await this.sdk(p.body.network);
@@ -423,6 +436,15 @@ export class Session {
     }
     if (result.ok) {
       result.confirmed = await confirmOnChain(sdk, intent, built.derived);
+      if (result.confirmed && intent.type === 'identity-create') {
+        const j = this.assetLockJournal(p.body.network);
+        const all = j.get();
+        const rec = all[`registration/${intent.assetLockProof.keyIndex}`];
+        if (rec?.txid === intent.assetLockProof.txid) {
+          rec.usedBy = p.id;
+          j.set(all);
+        }
+      }
       if (!result.confirmed) Object.assign(result, { ok: false, error: 'broadcast returned, but a proved read does not show the change' });
     }
     result.signers = Object.fromEntries(Object.entries(signatures).map(([k, v]) => [k, v.signers]));
@@ -433,6 +455,8 @@ export class Session {
   async topUp({ identityId, duffs, index, confirmMainnet = false }) {
     await this.sync();
     const id = this.identity(identityId);
+    const sdk0 = await this.sdk(id.network);
+    assert(await retry(() => sdk0.identities.fetch(id.identityId)), `identity ${id.identityId} does not exist on ${id.network}`);
     const lock = await this.assetLock(id.network, { duffs, kind: 'topup', index, confirmMainnet });
     const st = await core.topUpTransition({ network: id.network, seed: this.seed, index: lock.index, identityId: id.identityId, proof: { coreChainLockedHeight: lock.coreChainLockedHeight, txid: lock.txid, vout: 0 } });
     const sdk = await this.sdk(id.network);
