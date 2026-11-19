@@ -199,6 +199,7 @@ export class Session {
   }
 
   async proposeCeremony({ network, threshold, label, members, keys = DEFAULT_KEYS }) {
+    await this.sync();
     const s = this.state();
     const roster = members?.length ? members : Object.keys(s.hellos);
     const { cid, envelope } = participant.proposeCeremony(this.keys, this.data.room, s, { network, label, threshold, members: roster, keys });
@@ -275,6 +276,7 @@ export class Session {
   }
 
   async proposeIdentityCreate({ cid, duffs, index, confirmMainnet = false }) {
+    await this.sync();
     const c = this.ceremony(cid);
     assert(c.status === 'complete', `ceremony is ${c.status}`);
     const network = c.config.network;

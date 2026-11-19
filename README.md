@@ -59,7 +59,10 @@ Before signing, `dti approve` (and the UI's **Review and sign**) refuses unless 
 - the decoded transition is shown to the signer;
 - every key involved is the group key the ceremony produced;
 - the signing key has the purpose and security level Platform requires for that transition;
-- on Platform, the key is the identity's and is enabled, and the nonce and revision are current.
+- on Platform, the key is the identity's and is enabled, and the nonce and revision are current (offline review only with `--offline`);
+- the ids and withdrawal address the proposal shows are the ones in the bytes.
+
+When a proposal puts keys under a group's control (identity create, adding keys), the review lists that group's members and threshold. Signing then needs `--accept-new-keys` (or the UI's review dialog), so nobody can slip in a key held by a group they control.
 
 The default ceremony makes four keys: MASTER (key 0, identity updates), CRITICAL (1, contracts), HIGH (2, documents) and TRANSFER (3, credit transfers and withdrawals). Pass `--keys FILE` for other layouts, such as a rotation ceremony with new key ids (see `examples/rotation-keys.json`).
 
