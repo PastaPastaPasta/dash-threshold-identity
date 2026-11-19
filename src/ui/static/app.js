@@ -9,8 +9,11 @@ let state = null;
 let busy = false;
 const unchecked = new Set();
 
+const rendered = new WeakMap();
+
 function setOptions(el, html) {
-  if (el.innerHTML === html) return;
+  if (rendered.get(el) === html) return;
+  rendered.set(el, html);
   const before = el.value;
   el.innerHTML = html;
   if (before && [...el.options].some((o) => o.value === before)) el.value = before;
@@ -76,7 +79,10 @@ function renderRoom() {
     : 'No room selected.';
   $('#members').innerHTML = `<tr><th>Name</th><th>Fingerprint</th><th>Key</th></tr>${(state.members ?? []).map((m) => `<tr><td>${esc(m.name)}${m.me ? ' <span class="chip">you</span>' : ''}</td><td class="fp">${esc(m.fingerprint)}</td><td class="mono">${esc(short(m.authPub, 20))}</td></tr>`).join('')}`;
   const members = (state.members ?? []).map((m) => `<label><input type="checkbox" name="member" value="${esc(m.authPub)}"${unchecked.has(m.authPub) ? '' : ' checked'}> ${esc(m.name)}</label>`).join('');
-  if ($('#ceremony-members').innerHTML !== members) $('#ceremony-members').innerHTML = members;
+  if (rendered.get($('#ceremony-members')) !== members) {
+    rendered.set($('#ceremony-members'), members);
+    $('#ceremony-members').innerHTML = members;
+  }
 }
 
 function renderCeremonies() {

@@ -243,7 +243,8 @@ function finishProposal(p, ceremonies) {
     if (count(entry.shares) < c.config.threshold) ready = false;
   }
   const memberBroadcasts = p.broadcasts.filter((x) => member(x.from));
-  const ok = ready && memberBroadcasts.find((x) => x.result.ok === true);
+  const ok = ready && (memberBroadcasts.find((x) => x.result.ok === true && x.result.confirmed === true) ?? memberBroadcasts.find((x) => x.result.ok === true));
   p.status = ok ? 'executed' : ready ? 'ready' : 'collecting';
+  p.executedBy = ok || null;
   if (!ok && memberBroadcasts.length) p.lastBroadcastError = memberBroadcasts.at(-1).result.error;
 }

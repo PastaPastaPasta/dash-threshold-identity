@@ -10,12 +10,15 @@ export function fileStore(dir) {
   const loaded = new Set();
   const load = (room) => {
     if (loaded.has(room)) return;
-    if (!fs.existsSync(file(room))) {
+    let text;
+    try {
+      text = fs.readFileSync(file(room), 'utf8');
+    } catch (e) {
+      if (e.code !== 'ENOENT') throw e;
       loaded.add(room);
       return;
     }
     const r = { rows: [], ids: new Set(), policy: null };
-    const text = fs.readFileSync(file(room), 'utf8');
     const complete = text.endsWith('\n') ? text : text.slice(0, text.lastIndexOf('\n') + 1);
     if (complete.length !== text.length) fs.truncateSync(file(room), Buffer.byteLength(complete));
     for (const line of complete.split('\n').filter(Boolean)) {

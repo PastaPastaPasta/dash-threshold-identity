@@ -159,7 +159,7 @@ export class Session {
 
   identities(s = this.state()) {
     const out = Object.create(null);
-    const executed = Object.values(s.proposals).filter((p) => p.status === 'executed' && p.broadcasts.some((b) => b.result.ok === true && b.result.confirmed === true)).sort((a, b) => a.at.localeCompare(b.at));
+    const executed = Object.values(s.proposals).filter((p) => p.status === 'executed' && p.executedBy?.result.confirmed === true).sort((a, b) => a.at.localeCompare(b.at));
     for (const p of executed) {
       const i = p.body.intent;
       if (i.type === 'identity-create' && typeof p.body.derived?.identityId === 'string' && Array.isArray(i.keys)) {
