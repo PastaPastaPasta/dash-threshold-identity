@@ -39,7 +39,8 @@ An optional BIP39 passphrase comes from DTI_PASSPHRASE or --passphrase-file.
   dti propose update-identity [--add CID/SLOT,..] [--disable KEYID,..] [--signer master]
        (all propose commands take [--identity ID] [--fee-increase N] [--note TEXT])
   dti review PROPOSAL                          rebuild, decode and check a proposal
-  dti approve PROPOSAL [--yes]                 review, then contribute your signature share
+  dti approve PROPOSAL [--yes] [--offline]     review, then contribute your signature share
+       (--accept-new-keys: required when the proposal puts keys under a ceremony's control)
   dti reject PROPOSAL --reason TEXT
   dti execute PROPOSAL                         combine the shares and broadcast
 
@@ -57,7 +58,7 @@ const OPTIONS = {
   signer: { type: 'string' }, to: { type: 'string' }, 'to-address': { type: 'string' }, amount: { type: 'string' },
   add: { type: 'string' }, disable: { type: 'string' }, 'fee-increase': { type: 'string' }, note: { type: 'string' },
   reason: { type: 'string' }, port: { type: 'string' }, host: { type: 'string' }, dir: { type: 'string' },
-  'confirm-mainnet': { type: 'boolean' }, 'mnemonic-file': { type: 'string' }, 'passphrase-file': { type: 'string' }, offline: { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
+  'confirm-mainnet': { type: 'boolean' }, 'accept-new-keys': { type: 'boolean' }, 'mnemonic-file': { type: 'string' }, 'passphrase-file': { type: 'string' }, offline: { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
 };
 
 const print = (v, asJson) => console.log(asJson || typeof v !== 'string' ? JSON.stringify(v, jsonReplacer, 2) : v);
@@ -104,6 +105,8 @@ const confirmCeremony = (yes) => async (c) => {
 const confirmApproval = (yes) => async (report) => {
   console.error(`\nProposal ${report.id} from ${report.proposer}`);
   for (const line of report.summary) console.error(`  ${line}`);
+  console.error(`\nThe exact transition (${report.decoded?.action}):\n${JSON.stringify(report.decoded?.json, jsonReplacer, 2)}`);
+  for (const a of report.attention) console.error(`\n  ATTENTION: ${a}`);
   for (const w of report.warnings) console.error(`  warning: ${w}`);
   return yes || (await ask('Sign? [y/N] ')).toLowerCase() === 'y';
 };
@@ -118,7 +121,6 @@ export async function main(argv) {
   const { values: v, positionals: pos } = parseArgs({ args: argv, options: OPTIONS, allowPositionals: true, strict: true });
   const [cmd, sub, arg] = pos;
   if (v.help || !cmd || cmd === 'help') return print(HELP);
-  const common = (s) => ({ identityId: v.identity, userFeeIncrease: v['fee-increase'] ? Number(v['fee-increase']) : 0, note: v.note, signer: v.signer });
 
   switch (cmd) {
     case 'whoami': return print((await session(v, { needRoom: false })).whoami(), v.json);
@@ -164,15 +166,16 @@ export async function main(argv) {
     }
     case 'identity': {
       const s = await session(v);
-      if (sub === 'create') return print(await s.proposeIdentityCreate({ cid: v.cid, duffs: Number(v.duffs), index: v.index ? Number(v.index) : undefined, confirmMainnet: v['confirm-mainnet'] }), true);
+      const lock = { duffs: Number(v.duffs), index: v.index ? Number(v.index) : undefined, confirmMainnet: v['confirm-mainnet'] };
+      if (sub === 'create') return print(await s.proposeIdentityCreate({ cid: v.cid, ...lock }), true);
       if (sub === 'show') return print(await s.showIdentity(v.identity), true);
-      if (sub === 'topup') return print(await s.topUp({ identityId: v.identity, duffs: Number(v.duffs), index: v.index ? Number(v.index) : undefined, confirmMainnet: v['confirm-mainnet'] }), true);
+      if (sub === 'topup') return print(await s.topUp({ identityId: v.identity, ...lock }), true);
       break;
     }
     case 'propose': {
       const s = await session(v);
       await s.sync();
-      const c = common();
+      const c = { identityId: v.identity, userFeeIncrease: v['fee-increase'] ? Number(v['fee-increase']) : 0, note: v.note };
       switch (sub) {
         case 'contract-create': return print(await s.prepare('contract-create', { ...c, signer: v.signer ?? 'critical', contract: contractFromFile(v.schema) }), true);
         case 'contract-update': return print(await s.prepare('contract-update', { ...c, signer: v.signer ?? 'critical', contractId: v.contract, contract: contractFromFile(v.schema) }), true);
@@ -185,7 +188,7 @@ export async function main(argv) {
       break;
     }
     case 'review': { const s = await session(v); return print(await s.review(sub, { online: !v.offline }), true); }
-    case 'approve': { const s = await session(v); return print(await s.approve(sub, { confirm: confirmApproval(v.yes), online: !v.offline }), true); }
+    case 'approve': { const s = await session(v); return print(await s.approve(sub, { confirm: confirmApproval(v.yes), online: !v.offline, acknowledgeKeys: Boolean(v['accept-new-keys']) }), true); }
     case 'reject': { const s = await session(v); return print(await s.reject(sub, v.reason ?? ''), true); }
     case 'execute': { const s = await session(v); return print(await s.execute(sub), true); }
     case 'relay': {
@@ -200,7 +203,8 @@ export async function main(argv) {
     }
     case 'ui': {
       const { serveUi } = await import('./ui/server.mjs');
-      const s = await session(v);
+      const s = await session(v, { needRoom: false });
+      if (!s.data && listRooms().length === 1) s.data = loadRoom(listRooms()[0].room);
       const url = await serveUi(s, { port: Number(v.port ?? 8770) });
       console.error(`web UI: ${url}`);
       return new Promise(() => {});

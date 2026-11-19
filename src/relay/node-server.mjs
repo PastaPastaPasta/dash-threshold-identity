@@ -21,12 +21,13 @@ export function fileStore(dir) {
     mem.rooms.set(room, r);
   };
   return {
-    async append(room, id, body) {
+    async append(room, id, body, from) {
       load(room);
-      const seq = await mem.append(room, id, body);
-      if (seq !== null) fs.appendFileSync(file(room), `${JSON.stringify({ seq, id, body })}\n`);
+      const seq = await mem.append(room, id, body, from);
+      if (seq !== null) fs.appendFileSync(file(room), `${JSON.stringify({ seq, id, body, from })}\n`);
       return seq;
     },
+    async countFrom(room, from) { load(room); return mem.countFrom(room, from); },
     async list(room, after, limit) { load(room); return mem.list(room, after, limit); },
     async ids(room) { load(room); return mem.ids(room); },
     async count(room) { load(room); return mem.count(room); },

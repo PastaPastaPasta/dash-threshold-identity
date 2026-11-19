@@ -1,7 +1,9 @@
 import { buildTransition, decodeTransition, describeIntent, requirementsFor, expectedLevels, assembleSigned } from './platform/transitions.mjs';
 import { retry, errorText } from './platform/sdk.mjs';
-import { canonical, assert, hex } from './util.mjs';
+import { canonical, assert, getOwn } from './util.mjs';
 import { requirementKey } from './state.mjs';
+import { participantIndex } from './ceremony.mjs';
+import { addressToPubKeyHash } from './platform/core.mjs';
 
 export async function makeProposalBody(network, intent, note = '') {
   const built = await buildTransition(intent);
@@ -9,12 +11,35 @@ export async function makeProposalBody(network, intent, note = '') {
 }
 
 function slotInfo(state, r) {
-  const c = state.ceremonies[r.cid];
-  return c?.status === 'complete' ? c.result.keys[r.slot] : null;
+  const c = getOwn(state.ceremonies, r.cid);
+  return c?.status === 'complete' && Object.hasOwn(c.result.keys, r.slot) ? c.result.keys[r.slot] : null;
 }
 
-export async function reviewProposal(state, proposalId, { sdk = null } = {}) {
-  const p = state.proposals[proposalId];
+function ceremonyLine(state, cid) {
+  const c = state.ceremonies[cid];
+  return `"${c.config.label}" ${c.config.threshold}-of-${c.config.participants.length}: ${c.config.participants.map((p) => p.name).join(', ')}`;
+}
+
+function rosterKey(state, cid) {
+  const c = state.ceremonies[cid];
+  return `${c.config.threshold}|${c.config.participants.map((p) => p.authPub).sort().join(',')}`;
+}
+
+function attentionFor(state, intent, me) {
+  const out = [];
+  const signerCid = intent.signer?.cid;
+  for (const k of intent.keys ?? intent.addKeys ?? []) {
+    if (!slotInfo(state, k)) continue;
+    const lines = [`key ${k.keyId} (${k.purpose}/${k.securityLevel}) will be controlled by ceremony ${ceremonyLine(state, k.cid)}`];
+    if (me && !participantIndex(state.ceremonies[k.cid].config, me)) lines.push('  you are NOT a member of that ceremony');
+    if (signerCid && slotInfo(state, intent.signer) && rosterKey(state, k.cid) !== rosterKey(state, signerCid)) lines.push('  its members or threshold differ from the group signing this change');
+    out.push(lines.join('\n'));
+  }
+  return out;
+}
+
+export async function reviewProposal(state, proposalId, { sdk = null, online = false, me = null } = {}) {
+  const p = getOwn(state.proposals, proposalId);
   assert(p, `unknown proposal ${proposalId}`);
   const { intent } = p.body;
   const problems = [];
@@ -24,6 +49,7 @@ export async function reviewProposal(state, proposalId, { sdk = null } = {}) {
     rebuilt = await buildTransition(intent);
     if (rebuilt.unsigned !== p.body.unsigned) problems.push('the transition bytes do not match the stated intent (rebuilt independently)');
     if (rebuilt.signable !== p.body.signable) problems.push('the bytes to sign do not match the stated intent');
+    if (canonical(rebuilt.derived ?? {}) !== canonical(p.body.derived ?? {})) problems.push('the ids the proposal claims (derived) do not follow from the intent');
   } catch (e) {
     problems.push(`cannot rebuild the transition from its intent: ${e.message}`);
   }
@@ -35,8 +61,18 @@ export async function reviewProposal(state, proposalId, { sdk = null } = {}) {
     if (info.groupPublicKey !== k.publicKey) problems.push(`key ${k.keyId} is not the group key of ${k.slot}`);
     if (info.purpose !== k.purpose || info.securityLevel !== k.securityLevel || info.keyId !== k.keyId) problems.push(`key ${k.keyId} purpose/level/id differ from what the ceremony agreed for ${k.slot}`);
   }
-  const ceremonyNetwork = state.ceremonies[p.body.requirements[0]?.cid]?.config.network;
-  if (ceremonyNetwork && ceremonyNetwork !== p.body.network) problems.push(`proposal is for ${p.body.network} but the keys are for ${ceremonyNetwork}`);
+  for (const r of p.body.requirements) {
+    const network = getOwn(state.ceremonies, r.cid)?.config.network ?? null;
+    if (network && network !== p.body.network) problems.push(`proposal is for ${p.body.network} but key ${r.slot} is for ${network}`);
+  }
+  if (intent.type === 'credit-withdrawal') {
+    try {
+      if (addressToPubKeyHash(p.body.network, intent.outputAddress) !== intent.outputPubKeyHash) problems.push('the withdrawal address shown does not match the address in the transition');
+    } catch (e) {
+      problems.push(`bad withdrawal address: ${e.message}`);
+    }
+  }
+  if ((intent.userFeeIncrease ?? 0) > 100) problems.push(`fee increase of ${intent.userFeeIncrease}% is unusually high`);
   const levels = expectedLevels(intent);
   if (intent.signer && levels) {
     const info = slotInfo(state, intent.signer);
@@ -49,16 +85,19 @@ export async function reviewProposal(state, proposalId, { sdk = null } = {}) {
   } catch (e) {
     problems.push(`cannot decode the transition: ${e.message}`);
   }
-  if (sdk) {
-    try {
-      problems.push(...(await chainChecks(sdk, state, intent)));
-    } catch (e) {
-      warnings.push(`could not check against Platform: ${errorText(e)}`);
+  if (online) {
+    if (!sdk) problems.push('could not reach Platform to check the identity, keys and nonces (use --offline to review without it)');
+    else {
+      try {
+        problems.push(...(await chainChecks(sdk, state, intent)));
+      } catch (e) {
+        problems.push(`could not check against Platform: ${errorText(e)}`);
+      }
     }
   } else {
     warnings.push('not checked against live Platform state (offline review)');
   }
-  return { ok: problems.length === 0, problems, warnings, summary: describeIntent(intent), decoded, status: p.status };
+  return { ok: problems.length === 0, problems, warnings, attention: attentionFor(state, intent, me), summary: describeIntent(intent), decoded, status: p.status };
 }
 
 async function chainChecks(sdk, state, intent) {
@@ -104,8 +143,6 @@ export async function signedTransition(state, proposalId, signatures) {
   const p = state.proposals[proposalId];
   const built = await assembleSigned(p.body.intent, signatures);
   assert(built.signable === p.body.signable, 'attaching signatures changed the bytes that were signed');
+  assert(canonical(built.derived ?? {}) === canonical(p.body.derived ?? {}), 'the proposal\'s derived ids do not follow from its intent');
   return built;
 }
-
-export const transitionHash = (st) => st.hash(false);
-export { hex };

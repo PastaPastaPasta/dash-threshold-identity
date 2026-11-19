@@ -8,7 +8,6 @@
   "bin": { "dti": "bin/dti.mjs" },
   "scripts": {
     "test": "node --test test/*.test.mjs",
-    "typecheck": "tsc -p jsconfig.json",
     "relay:dev": "wrangler dev --config relay/wrangler.toml"
   },
   "dependencies": {
@@ -21,7 +20,6 @@
     "@scure/bip39": "2.4.0"
   },
   "devDependencies": {
-    "typescript": "5.9.3",
     "wrangler": "4.165.0",
     "@types/node": "22.19.1"
   }

@@ -18,7 +18,6 @@ export const scalarFromHex = (h) => mod(BigInt(`0x${h}`));
 
 export const g1 = (scalar) => G1.BASE.multiply(scalar);
 export const g1Hex = (point) => point.toHex(true);
-export const g1FromHex = (h) => G1.fromHex(h);
 
 export function evalPoly(coefficients, x) {
   let acc = 0n;

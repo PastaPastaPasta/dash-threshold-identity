@@ -97,7 +97,7 @@ function renderIdentities() {
       <h2>Identity <code>${esc(i.identityId)}</code></h2>
       <div class="muted">${esc(i.network)}</div>
       <table><tr><th>Key</th><th>Slot</th><th>Purpose / level</th><th>Status</th></tr>
-      ${Object.values(i.keys).map((k) => `<tr><td>${k.keyId}</td><td>${esc(k.slot)}</td><td>${esc(k.purpose)} / ${esc(k.securityLevel)}</td><td>${k.disabled ? '<span class="chip bad">disabled</span>' : '<span class="chip ok">enabled</span>'}</td></tr>`).join('')}</table>
+      ${Object.values(i.keys).map((k) => `<tr><td>${Number(k.keyId)}</td><td>${esc(k.slot)}</td><td>${esc(k.purpose)} / ${esc(k.securityLevel)}</td><td>${k.disabled ? '<span class="chip bad">disabled</span>' : '<span class="chip ok">enabled</span>'}</td></tr>`).join('')}</table>
       <div class="row end"><button class="secondary" data-show="${esc(i.identityId)}">Proved read from Platform</button></div>
     </div>`).join('') || '<div class="card muted">No identity yet.</div>';
   for (const b of document.querySelectorAll('[data-show]')) b.onclick = () => act('Read identity', async () => showDialog(`<h2>On-chain identity</h2><pre>${esc(JSON.stringify(await api('GET', '/api/identity', { identityId: b.dataset.show }), null, 2))}</pre>`));
@@ -130,13 +130,14 @@ function showReview(r, offerSign) {
     <h2>Proposal from ${esc(r.proposer)} ${r.status === 'executed' ? '<span class="chip ok">already executed</span>' : r.ok ? '<span class="chip ok">checks pass</span>' : '<span class="chip bad">do not sign</span>'}</h2>
     <ul class="summary">${r.summary.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>
     ${r.problems.length ? `<h3>Problems</h3><ul>${r.problems.map((p) => `<li class="chip bad">${esc(p)}</li>`).join('')}</ul>` : ''}
+    ${r.attention?.length ? `<h3>Who will control new keys</h3><pre>${esc(r.attention.join('\n'))}</pre>` : ''}
     ${r.warnings.length ? `<h3>Warnings</h3><ul>${r.warnings.map((p) => `<li>${esc(p)}</li>`).join('')}</ul>` : ''}
     <h3>The exact transition you would sign (decoded: ${esc(r.decoded?.action)})</h3>
     <pre>${esc(JSON.stringify(r.decoded?.json, null, 2))}</pre>
     <details><summary>Intent</summary><pre>${esc(JSON.stringify(r.intent, null, 2))}</pre></details>
     ${offerSign && r.ok ? `<div class="row end"><button id="sign-now">Sign with my share</button></div>` : ''}`);
   const b = $('#sign-now');
-  if (b) b.onclick = () => { $('#dialog').close(); act('Sign', () => api('POST', '/api/approve', { id: r.id })); };
+  if (b) b.onclick = () => { $('#dialog').close(); act('Sign', () => api('POST', '/api/approve', { id: r.id, acknowledgeKeys: Boolean(r.attention?.length) })); };
 }
 
 async function refresh() {

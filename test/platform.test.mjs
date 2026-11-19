@@ -77,10 +77,29 @@ test('review catches a key that is not the group key, a wrong network and a too-
   assert.ok((await reviewProposal(s, id)).problems.some((p) => /not the group key of master/.test(p)));
 
   ({ s, id } = await withProposal(await makeProposalBody('mainnet', contractCreate)));
-  assert.ok((await reviewProposal(s, id)).problems.some((p) => /keys are for testnet/.test(p)));
+  assert.ok((await reviewProposal(s, id)).problems.some((p) => /is for testnet/.test(p)));
 
   ({ s, id } = await withProposal(await makeProposalBody('testnet', { ...contractCreate, type: 'contract-update', contractId: OWNER, identityContractNonce: '2', version: 2, signer: { keyId: 2, cid, slot: 'high' } })));
   assert.ok((await reviewProposal(s, id)).problems.some((p) => /cannot be signed by a AUTHENTICATION\/HIGH key/.test(p)));
+});
+
+test('review catches a withdrawal whose shown address is not the paid one, and lying derived ids', async () => {
+  const withdrawal = { type: 'credit-withdrawal', identityId: OWNER, amount: '5000000000', coreFeePerByte: 1, pooling: 'Never', outputAddress: 'yehTPpUrcj3nAUQBBDG6MLCnFMbipTW1Gr', outputPubKeyHash: '00'.repeat(20), nonce: '3', userFeeIncrease: 0, signer: { keyId: 3, cid, slot: 'transfer' } };
+  let { s, id } = await withProposal(await makeProposalBody('testnet', withdrawal));
+  assert.ok((await reviewProposal(s, id)).problems.some((p) => /address shown does not match/.test(p)));
+  const honest = await makeProposalBody('testnet', identityCreate);
+  ({ s, id } = await withProposal({ ...honest, derived: { identityId: 'E2RdP9SgvDff6JMBr1FTGMEhKSo4WKps6uYop9JhoLTM' } }));
+  assert.ok((await reviewProposal(s, id)).problems.some((p) => /derived/.test(p)));
+});
+
+test('review names who will control keys a proposal adds, and fails closed without Platform', async () => {
+  const update = { type: 'identity-update', identityId: OWNER, revision: '1', nonce: '2', userFeeIncrease: 0, signer: { keyId: 0, cid, slot: 'master' }, disableKeyIds: [], addKeys: [{ cid, slot: 'high', keyId: 2, purpose: 'AUTHENTICATION', securityLevel: 'HIGH', publicKey: keys.high.groupPublicKey }] };
+  const { s, id } = await withProposal(await makeProposalBody('testnet', update));
+  const offline = await reviewProposal(s, id, { me: ps[0].keys.authPub });
+  assert.equal(offline.attention.length, 1);
+  assert.match(offline.attention[0], /3-of-5/);
+  const online = await reviewProposal(s, id, { online: true, sdk: null });
+  assert.ok(online.problems.some((p) => /could not reach Platform/.test(p)));
 });
 
 test('three approvals assemble a signed identity create whose proofs verify and whose signable bytes are unchanged', async () => {

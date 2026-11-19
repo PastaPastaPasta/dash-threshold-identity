@@ -2,19 +2,20 @@ import { sealEnvelope } from './envelope.mjs';
 import { makeConfig, ceremonyId, participantIndex, buildReveal, revealDigest, receiveShares, buildCompletion, publicShareOf } from './ceremony.mjs';
 import { signShare, combineShares, verify } from './bls.mjs';
 import { requirementKey } from './state.mjs';
-import { unhex, assert } from './util.mjs';
+import { unhex, assert, getOwn } from './util.mjs';
 
 export function hello(keys, room, name) {
   return sealEnvelope(keys, room, 'hello', { name, transportPub: keys.transportPub, fingerprint: keys.fingerprint });
 }
 
 export function proposeCeremony(keys, room, state, { network, label, threshold, members, keys: slots, createdAt }) {
+  assert(members.every((a) => Object.hasOwn(state.hellos, a)), 'every member must join the room first');
   const participants = members.map((authPub) => {
     const h = state.hellos[authPub];
     assert(h, `no hello from ${authPub.slice(0, 12)}…; every member must join the room first`);
     return { name: h.name, authPub, transportPub: h.transportPub };
   });
-  const config = makeConfig({ network, label, threshold, organizer: keys.authPub, participants, keys: slots, createdAt });
+  const config = makeConfig({ room, network, label, threshold, organizer: keys.authPub, participants, keys: slots, createdAt });
   return { cid: ceremonyId(config), envelope: sealEnvelope(keys, room, 'config', { config }) };
 }
 
@@ -23,7 +24,7 @@ export function accept(keys, room, cid) {
 }
 
 function myCeremony(state, cid, keys) {
-  const c = state.ceremonies[cid];
+  const c = getOwn(state.ceremonies, cid);
   assert(c, `unknown ceremony ${cid}`);
   const me = participantIndex(c.config, keys.authPub);
   assert(me, 'you are not a participant in this ceremony');
@@ -33,7 +34,7 @@ function myCeremony(state, cid, keys) {
 export function nextCeremonyStep(seed, keys, room, state, cid) {
   const { c, me } = myCeremony(state, cid, keys);
   const n = c.config.participants.length;
-  const has = (o) => me in o;
+  const has = (o) => Object.hasOwn(o, me);
   const all = (o) => Object.keys(o).length === n;
   if (c.status === 'failed') return { action: 'failed', envelopes: [] };
   if (!has(c.accepts)) return { action: 'accept', needsConfirmation: true, envelopes: [accept(keys, room, cid)] };
@@ -45,7 +46,7 @@ export function nextCeremonyStep(seed, keys, room, state, cid) {
   if (!all(c.commits)) return { action: 'wait-commits', envelopes: [] };
   if (!has(c.reveals)) {
     const reveal = buildReveal(seed, keys, c.config, cid);
-    assert(revealDigest(reveal) === c.commits[me].digest, 'my reveal no longer matches my commitment (wrong seed?)');
+    assert(revealDigest(reveal) === c.commits[me], 'my reveal no longer matches my commitment (wrong seed?)');
     return { action: 'reveal', envelopes: [sealEnvelope(keys, room, 'dkg-reveal', { cid, reveal })] };
   }
   if (!all(c.reveals)) return { action: 'wait-reveals', envelopes: [] };
@@ -62,11 +63,10 @@ export function nextCeremonyStep(seed, keys, room, state, cid) {
 }
 
 export function recoverShares(seed, keys, state, cid) {
-  const { c } = myCeremony(state, cid, keys);
+  const { c, me } = myCeremony(state, cid, keys);
   assert(c.status === 'complete', `ceremony ${cid.slice(0, 12)} is ${c.status}, not complete`);
   const { shares, complaints } = receiveShares(seed, keys, c.config, cid, c.reveals);
   assert(!complaints.length, `cannot recover shares: ${complaints.map((x) => x.reason).join('; ')}`);
-  const me = participantIndex(c.config, keys.authPub);
   for (const [slot, share] of Object.entries(shares)) {
     assert(publicShareOf(share) === c.result.keys[slot].publicShares[me], `recovered ${slot} share does not match the public transcript (wrong seed?)`);
   }

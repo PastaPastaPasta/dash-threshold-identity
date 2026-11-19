@@ -1,7 +1,7 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex, hexToBytes, utf8ToBytes, concatBytes } from '@noble/hashes/utils.js';
 
-export { bytesToHex as hex, hexToBytes as unhex, utf8ToBytes as utf8, concatBytes as concat };
+export { bytesToHex as hex, hexToBytes as unhex, utf8ToBytes as utf8 };
 
 export const sha256hex = (bytes) => bytesToHex(sha256(typeof bytes === 'string' ? utf8ToBytes(bytes) : bytes));
 
@@ -38,6 +38,12 @@ export const toPlain = (v) => JSON.parse(JSON.stringify(v, jsonReplacer));
 export function assert(cond, message) {
   if (!cond) throw new Error(message);
 }
+
+export const getOwn = (o, k) => (Object.hasOwn(o, k) ? o[k] : null);
+
+export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+export const ROOM_PATTERN = /^[A-Za-z0-9_-]{8,64}$/;
 
 export const isHex = (s, bytes) => typeof s === 'string' && /^[0-9a-f]*$/.test(s) && s.length % 2 === 0 && (bytes === undefined || s.length === bytes * 2);
 

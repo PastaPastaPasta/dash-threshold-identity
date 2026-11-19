@@ -2,9 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { envelopeId, verifyEnvelope } from './envelope.mjs';
-import { assert } from './util.mjs';
-
-export const ROOM_PATTERN = /^[A-Za-z0-9_-]{8,64}$/;
+import { assert, ROOM_PATTERN } from './util.mjs';
 
 export function home() {
   return process.env.DTI_HOME || path.join(os.homedir(), '.dti');

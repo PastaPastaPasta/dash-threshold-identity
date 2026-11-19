@@ -5,7 +5,7 @@ import { mnemonicToSeedSync, validateMnemonic } from '@scure/bip39';
 import { wordlist } from '@scure/bip39/wordlists/english.js';
 import { HDKey } from '@scure/bip32';
 import { hex, utf8, lengthPrefixed, sha256hex, assert } from './util.mjs';
-import { R, mod, bytesToScalar } from './bls.mjs';
+import { mod, bytesToScalar } from './bls.mjs';
 
 const SALT = utf8('dash-threshold-identity/v1');
 
@@ -36,7 +36,7 @@ export function participantKeys(seed) {
 }
 
 export function fingerprint(authPub, transportPub) {
-  const h = sha256hex(`dti-fingerprint|${authPub}|${transportPub}`).slice(0, 20).toUpperCase();
+  const h = sha256hex(`dti-fingerprint|${authPub}|${transportPub}`).slice(0, 32).toUpperCase();
   return h.match(/.{4}/g).join('-');
 }
 
@@ -56,8 +56,7 @@ export function coreKey(seed, path) {
   return { path, privateKeyHex: hex(node.privateKey), publicKeyHex: hex(node.publicKey) };
 }
 
-export const coreFundingPath = (network, index = 0) => `m/44'/${COIN[network]}'/0'/0/${index}`;
-export const assetLockRegistrationPath = (network, index) => `m/9'/${COIN[network]}'/5'/1'/${index}'`;
-export const assetLockTopUpPath = (network, index) => `m/9'/${COIN[network]}'/5'/2'/${index}'`;
-
-export { R };
+const ACCOUNT = 17492;
+export const coreFundingPath = (network, index = 0) => `m/44'/${COIN[network]}'/${ACCOUNT}'/0/${index}`;
+export const assetLockRegistrationPath = (network, index) => `m/44'/${COIN[network]}'/${ACCOUNT}'/1'/${index}'`;
+export const assetLockTopUpPath = (network, index) => `m/44'/${COIN[network]}'/${ACCOUNT}'/2'/${index}'`;

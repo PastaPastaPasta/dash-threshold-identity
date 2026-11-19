@@ -8,7 +8,8 @@ import { participantKeys, seedFromMnemonic } from '../src/derive.mjs';
 import { sealEnvelope } from '../src/envelope.mjs';
 import { verify, interpolatePublic, lagrangeAtZero, mod, g1, g1Hex, scalarToHex, DST } from '../src/bls.mjs';
 import { hex, unhex, utf8 } from '../src/util.mjs';
-import { revealDigest } from '../src/ceremony.mjs';
+import { revealDigest, judgeComplaint as ceremonyJudge } from '../src/ceremony.mjs';
+import { boxContext, boxKeys, encryptBox } from '../src/envelope.mjs';
 import { MNEMONICS } from './helpers.mjs';
 
 const ps = people(5);
@@ -47,7 +48,7 @@ test('the whole ceremony is deterministic: rerunning it gives the same keys', ()
 });
 
 test('a different roster gives unrelated keys', () => {
-  const other = runCeremony(people(6).slice(1), { room: 'other' });
+  const other = runCeremony(people(6).slice(1), { room: 'other-room' });
   const a = base.state.ceremonies[base.cid].result.keys.master.groupPublicKey;
   assert.notEqual(other.state.ceremonies[other.cid].result.keys.master.groupPublicKey, a);
 });
@@ -128,21 +129,69 @@ test('a member who reveals something other than what they committed is caught', 
   assert.match(c.problems[0].reason, /does not match its commitment/);
 });
 
-test('a bad encrypted share leads to a complaint, not a key', () => {
-  const room = 'bad-share';
+function tamperedCeremony(room, mutate) {
   const messages = [];
   for (const p of ps) messages.push(hello(p.keys, room, p.name));
   const { cid, envelope } = proposeCeremony(ps[0].keys, room, reduce(messages), { network: 'testnet', label: 'x', threshold: 3, members: ps.map((p) => p.keys.authPub), createdAt: '2026-11-19T00:00:00.000Z' });
   messages.push(envelope);
   const evil = ps[4];
-  const honest = ps.slice(0, 4);
   advance(ps, room, messages, cid, 3);
   const at = (type) => messages.findIndex((m) => m.type === type && m.from === evil.keys.authPub);
   const reveal = JSON.parse(JSON.stringify(messages[at('dkg-reveal')].body));
-  reveal.reveal.slots.critical.boxes['1'] = reveal.reveal.slots.critical.boxes['2'];
+  mutate(reveal.reveal, cid);
   messages[at('dkg-commit')] = sealEnvelope(evil.keys, room, 'dkg-commit', { cid, digest: revealDigest(reveal.reveal) });
   messages[at('dkg-reveal')] = sealEnvelope(evil.keys, room, 'dkg-reveal', reveal);
-  const c = advance(honest, room, messages.filter((m) => m.type !== 'dkg-complete'), cid, 3).ceremonies[cid];
+  return advance(ps.slice(0, 4), room, messages.filter((m) => m.type !== 'dkg-complete'), cid, 3).ceremonies[cid];
+}
+
+test('a wrong but decryptable share is proven against its sender', () => {
+  const c = tamperedCeremony('bad-share-proven', (reveal, cid) => {
+    const ctx = boxContext({ cid, slot: 'critical', from: 5, to: 1, fromTransport: ps[4].keys.transportPub, toTransport: ps[0].keys.transportPub });
+    reveal.slots.critical.boxes['1'] = encryptBox(ps[4].keys.transportSecret, ps[0].keys.transportPub, ctx, scalarToHex(12345n));
+  });
   assert.equal(c.status, 'failed');
-  assert.ok(c.complaints.some((x) => x.from === 1 && x.against === 5 && x.slot === 'critical'));
+  assert.ok(c.complaints.some((x) => x.from === 1 && x.against === 5 && x.slot === 'critical' && x.verdict === 'proven'));
+});
+
+test('a box that does not decrypt fails the ceremony, with blame left open', () => {
+  const c = tamperedCeremony('bad-share-unproven', (reveal) => {
+    reveal.slots.critical.boxes['1'] = reveal.slots.critical.boxes['2'];
+  });
+  assert.equal(c.status, 'failed');
+  assert.ok(c.complaints.some((x) => x.from === 1 && x.against === 5 && x.verdict === 'unproven'));
+});
+
+test('late complaints or conflicting messages cannot undo a completed ceremony', () => {
+  const messages = [...base.messages];
+  messages.push(sealEnvelope(ps[3].keys, ROOM, 'dkg-commit', { cid: base.cid, digest: 'cd'.repeat(32) }, '2000-01-01T00:00:00.000Z'));
+  messages.push(sealEnvelope(ps[2].keys, ROOM, 'dkg-complaint', { cid: base.cid, against: 4, slot: 'master', reason: 'made up' }));
+  const c = reduce(messages).ceremonies[base.cid];
+  assert.equal(c.status, 'complete');
+  assert.deepEqual(c.result, base.state.ceremonies[base.cid].result);
+  assert.ok(c.warnings.length >= 2);
+});
+
+test('a complaint against an honest share is shown to be false', () => {
+  const messages = base.messages.filter((m) => m.type !== 'dkg-complete');
+  const c0 = reduce(messages).ceremonies[base.cid];
+  const p1 = ps[0];
+  const accused = c0.config.participants[1];
+  const ctx = boxContext({ cid: base.cid, slot: 'master', from: 2, to: 1, fromTransport: accused.transportPub, toTransport: p1.keys.transportPub });
+  const mat = boxKeys(p1.keys.transportSecret, accused.transportPub, ctx);
+  const verdict = ceremonyJudge(c0.config, base.cid, { from: 1, against: 2, slot: 'master', evidence: { key: hex(mat.key), nonce: hex(mat.nonce) } }, c0.reveals[2]);
+  assert.equal(verdict, 'false');
+});
+
+test('junk from outsiders cannot crash the room or fake an execution', () => {
+  const outsider = people(6)[5];
+  const messages = [...base.messages, proposal(base.state)];
+  const pid = Object.keys(reduce(messages).proposals)[0];
+  messages.push(sealEnvelope(outsider.keys, ROOM, 'proposal', { network: 'testnet', intent: { type: 'x' }, unsigned: '00', signable: '00', requirements: [null] }));
+  messages.push(sealEnvelope(outsider.keys, ROOM, 'proposal', { network: 'testnet', intent: { type: 'x' }, unsigned: '00', signable: '00', requirements: [{ cid: 'constructor', slot: 'master' }] }));
+  messages.push(sealEnvelope(outsider.keys, ROOM, 'approve', { proposalId: 'constructor', shares: null }));
+  messages.push(sealEnvelope(outsider.keys, ROOM, 'broadcast', { proposalId: pid, result: { ok: true } }));
+  messages.push(sealEnvelope(ps[1].keys, ROOM, 'broadcast', { proposalId: pid, result: { ok: true } }));
+  const state = reduce(messages);
+  assert.equal(state.proposals[pid].status, 'collecting');
+  assert.equal(state.problems.filter((p) => /malformed proposal/.test(p.reason)).length, 2);
 });

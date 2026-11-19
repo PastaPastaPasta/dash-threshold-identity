@@ -16,8 +16,6 @@ export const DEFAULT_CONTRACT_CONFIG = {
   sizedIntegerTypes: true,
 };
 
-const big = (v) => BigInt(v);
-
 export function requirementsFor(intent) {
   switch (intent.type) {
     case 'identity-create':
@@ -60,7 +58,7 @@ async function platformVersion(m, intent) {
 
 function contractJson(intent, id, version) {
   const { config, documentSchemas, ...rest } = intent.contract;
-  return { $formatVersion: '1', id, ownerId: intent.ownerId, version, config: config ?? DEFAULT_CONTRACT_CONFIG, documentSchemas, ...rest };
+  return { ...rest, $formatVersion: '1', id, ownerId: intent.ownerId, version, config: config ?? DEFAULT_CONTRACT_CONFIG, documentSchemas };
 }
 
 export async function buildTransition(intent, { popSignatures = {} } = {}) {
@@ -81,8 +79,8 @@ export async function buildTransition(intent, { popSignatures = {} } = {}) {
     case 'identity-update': {
       const t = new m.IdentityUpdateTransition({
         identityId: intent.identityId,
-        revision: big(intent.revision),
-        nonce: big(intent.nonce),
+        revision: BigInt(intent.revision),
+        nonce: BigInt(intent.nonce),
         addPublicKeys: intent.addKeys.map((k) => keyInCreation(m, k, popSignatures[k.keyId])),
         disablePublicKeys: intent.disableKeyIds,
         userFeeIncrease: fee,
@@ -92,7 +90,7 @@ export async function buildTransition(intent, { popSignatures = {} } = {}) {
     }
     case 'contract-create': {
       const pv = await platformVersion(m, intent);
-      const nonce = big(intent.identityNonce);
+      const nonce = BigInt(intent.identityNonce);
       const id = m.DataContract.generateId(intent.ownerId, nonce).toBase58();
       const dc = m.DataContract.fromJSON(contractJson(intent, id, 1), true, pv);
       st = new m.DataContractCreateTransition(dc, nonce, pv).toStateTransition();
@@ -103,23 +101,23 @@ export async function buildTransition(intent, { popSignatures = {} } = {}) {
     case 'contract-update': {
       const pv = await platformVersion(m, intent);
       const dc = m.DataContract.fromJSON(contractJson(intent, intent.contractId, intent.version), true, pv);
-      st = new m.DataContractUpdateTransition(dc, big(intent.identityContractNonce), pv).toStateTransition();
+      st = new m.DataContractUpdateTransition(dc, BigInt(intent.identityContractNonce), pv).toStateTransition();
       st.userFeeIncrease = fee;
       break;
     }
     case 'document': {
       const d = intent.document;
       const base = { properties: d.properties ?? {}, documentTypeName: d.documentType, dataContractId: intent.contractId, ownerId: intent.ownerId };
-      const nonce = big(intent.identityContractNonce);
+      const nonce = BigInt(intent.identityContractNonce);
       let transition;
       if (d.action === 'create') {
         assert(isHex(d.entropy, 32), 'document create needs 32 bytes of entropy (hex)');
         transition = new m.DocumentCreateTransition({ document: new m.Document({ ...base, entropy: unhex(d.entropy) }), identityContractNonce: nonce });
       } else if (d.action === 'replace') {
-        transition = new m.DocumentReplaceTransition({ document: new m.Document({ ...base, id: d.id, revision: big(d.revision) }), identityContractNonce: nonce });
-        derived = { documentId: d.id, newRevision: String(big(d.revision) + 1n) };
+        transition = new m.DocumentReplaceTransition({ document: new m.Document({ ...base, id: d.id, revision: BigInt(d.revision) }), identityContractNonce: nonce });
+        derived = { documentId: d.id, newRevision: String(BigInt(d.revision) + 1n) };
       } else if (d.action === 'delete') {
-        transition = new m.DocumentDeleteTransition({ document: new m.Document({ ...base, properties: {}, id: d.id, revision: big(d.revision ?? 1) }), identityContractNonce: nonce });
+        transition = new m.DocumentDeleteTransition({ document: new m.Document({ ...base, properties: {}, id: d.id, revision: BigInt(d.revision ?? 1) }), identityContractNonce: nonce });
         derived = { documentId: d.id };
       } else {
         throw new Error(`unknown document action ${d.action}`);
@@ -131,7 +129,7 @@ export async function buildTransition(intent, { popSignatures = {} } = {}) {
     }
     case 'credit-transfer': {
       st = m.IdentityCreditTransfer.fromObject({
-        $formatVersion: '0', identityId: intent.identityId, recipientId: intent.recipientId, amount: big(intent.amount), nonce: big(intent.nonce),
+        $formatVersion: '0', identityId: intent.identityId, recipientId: intent.recipientId, amount: BigInt(intent.amount), nonce: BigInt(intent.nonce),
         userFeeIncrease: fee, signaturePublicKeyId: intent.signer.keyId, signature: new Uint8Array(),
       }).toStateTransition();
       break;
@@ -139,11 +137,11 @@ export async function buildTransition(intent, { popSignatures = {} } = {}) {
     case 'credit-withdrawal': {
       st = new m.IdentityCreditWithdrawalTransition({
         identityId: intent.identityId,
-        amount: big(intent.amount),
+        amount: BigInt(intent.amount),
         coreFeePerByte: intent.coreFeePerByte,
         pooling: intent.pooling ?? 'Never',
         outputScript: m.CoreScript.fromP2PKH(unhex(intent.outputPubKeyHash)),
-        nonce: big(intent.nonce),
+        nonce: BigInt(intent.nonce),
         userFeeIncrease: fee,
       }).toStateTransition();
       break;
@@ -177,25 +175,27 @@ export async function decodeTransition(unsignedHex) {
 
 export function describeIntent(intent) {
   const signer = intent.signer ? ` signed by key ${intent.signer.keyId} (${intent.signer.slot})` : '';
+  const fee = intent.userFeeIncrease ? [`  fee increase: ${intent.userFeeIncrease}%`] : [];
+  const json = (v) => JSON.stringify(v);
   switch (intent.type) {
     case 'identity-create':
       return [`Create a new identity funded by asset lock ${intent.assetLockProof.txid}:${intent.assetLockProof.vout} (chain-locked at ${intent.assetLockProof.coreChainLockedHeight})`,
-        ...intent.keys.map((k) => `  key ${k.keyId}: ${k.purpose}/${k.securityLevel} BLS ${k.publicKey.slice(0, 16)}… (${k.slot})`)];
+        ...intent.keys.map((k) => `  key ${k.keyId}: ${k.purpose}/${k.securityLevel} BLS ${k.publicKey} (${k.slot})`), ...fee];
     case 'identity-update':
       return [`Update identity ${intent.identityId} to revision ${intent.revision} (nonce ${intent.nonce})${signer}`,
-        ...intent.addKeys.map((k) => `  add key ${k.keyId}: ${k.purpose}/${k.securityLevel} BLS ${k.publicKey.slice(0, 16)}… (${k.slot})`),
-        ...intent.disableKeyIds.map((id) => `  disable key ${id}`)];
+        ...intent.addKeys.map((k) => `  add key ${k.keyId}: ${k.purpose}/${k.securityLevel} BLS ${k.publicKey} (${k.slot})`),
+        ...intent.disableKeyIds.map((id) => `  disable key ${id}`), ...fee];
     case 'contract-create':
-      return [`Register a data contract owned by ${intent.ownerId} (identity nonce ${intent.identityNonce})${signer}`, `  document types: ${Object.keys(intent.contract.documentSchemas).join(', ')}`];
+      return [`Register a data contract owned by ${intent.ownerId} (identity nonce ${intent.identityNonce})${signer}`, `  contract: ${json(intent.contract)}`, ...fee];
     case 'contract-update':
-      return [`Update contract ${intent.contractId} to version ${intent.version} (contract nonce ${intent.identityContractNonce})${signer}`, `  document types: ${Object.keys(intent.contract.documentSchemas).join(', ')}`];
+      return [`Update contract ${intent.contractId} to version ${intent.version} (contract nonce ${intent.identityContractNonce})${signer}`, `  contract: ${json(intent.contract)}`, ...fee];
     case 'document':
       return [`${intent.document.action} a "${intent.document.documentType}" document in contract ${intent.contractId}${intent.document.id ? ` (id ${intent.document.id})` : ''}${signer}`,
-        ...(intent.document.properties ? [`  properties: ${JSON.stringify(intent.document.properties).slice(0, 400)}`] : [])];
+        ...(intent.document.properties ? [`  properties: ${json(intent.document.properties)}`] : []), ...fee];
     case 'credit-transfer':
-      return [`Transfer ${intent.amount} credits from ${intent.identityId} to ${intent.recipientId} (nonce ${intent.nonce})${signer}`];
+      return [`Transfer ${intent.amount} credits from ${intent.identityId} to ${intent.recipientId} (nonce ${intent.nonce})${signer}`, ...fee];
     case 'credit-withdrawal':
-      return [`Withdraw ${intent.amount} credits from ${intent.identityId} to Core P2PKH ${intent.outputAddress ?? intent.outputPubKeyHash} (nonce ${intent.nonce})${signer}`];
+      return [`Withdraw ${intent.amount} credits from ${intent.identityId} to Core address ${intent.outputAddress} (nonce ${intent.nonce}, core fee ${intent.coreFeePerByte}/byte, pooling ${intent.pooling ?? 'Never'})${signer}`, ...fee];
     default:
       return [`unknown intent ${intent.type}`];
   }

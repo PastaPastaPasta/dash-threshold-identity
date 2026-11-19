@@ -1,6 +1,6 @@
 import dashcore from '@dashevo/dashcore-lib';
 import { coreKey, coreFundingPath, assetLockRegistrationPath, assetLockTopUpPath } from '../derive.mjs';
-import { assert, hex } from '../util.mjs';
+import { assert, hex, sleep } from '../util.mjs';
 import { sdkModule, retry } from './sdk.mjs';
 
 const { PrivateKey, Transaction, Script, Opcode, Address } = dashcore;
@@ -11,6 +11,7 @@ export const INSIGHT = {
 };
 const CORE_NET = { testnet: 'testnet', mainnet: 'livenet' };
 const FEE_PER_KB = 1000;
+const MAX_FEE = 100000;
 
 const insight = (network) => process.env.DTI_INSIGHT_URL || INSIGHT[network];
 
@@ -40,6 +41,20 @@ export function addressToPubKeyHash(network, address) {
 
 export async function utxos(network, address) {
   return (await getJson(`${insight(network)}/addr/${address}/utxo`)) ?? [];
+}
+
+export async function verifiedUtxos(network, address) {
+  const out = [];
+  for (const u of await utxos(network, address)) {
+    const raw = await getJson(`${insight(network)}/rawtx/${u.txid}`);
+    assert(raw?.rawtx, `no raw transaction for ${u.txid}`);
+    const tx = new Transaction(raw.rawtx);
+    assert(tx.hash === u.txid, `Insight returned a transaction that does not hash to ${u.txid}`);
+    const output = tx.outputs[u.vout];
+    assert(output && output.script.toAddress(CORE_NET[network])?.toString() === address, `output ${u.txid}:${u.vout} does not pay ${address}`);
+    out.push({ ...u, satoshis: output.satoshis, scriptPubKey: output.script.toHex() });
+  }
+  return out;
 }
 
 export async function fetchTx(network, txid) {
@@ -73,7 +88,9 @@ export function buildAssetLock({ network, funding, utxoList, creditAddress, duff
     .feePerKb(FEE_PER_KB)
     .change(funding.address)
     .sign(funding.privateKey);
-  return { txid: tx.id, rawtx: tx.serialize(true), fee: tx.getFee(), outpoint: { txid: tx.id, vout: 0 } };
+  const fee = tx.getFee();
+  assert(fee > 0 && fee <= MAX_FEE, `refusing an asset lock with a fee of ${fee} duffs`);
+  return { txid: tx.id, rawtx: tx.serialize(true), fee };
 }
 
 export async function waitForChainLock(network, sdk, txid, { timeoutMs = 20 * 60 * 1000, onWait } = {}) {
@@ -91,7 +108,7 @@ export async function waitForChainLock(network, sdk, txid, { timeoutMs = 20 * 60
     } else {
       onWait?.('waiting for the asset lock to be mined');
     }
-    await new Promise((r) => setTimeout(r, 10000));
+    await sleep(10000);
   }
   throw new Error(`asset lock ${txid} was not chain-locked within ${timeoutMs / 60000} minutes`);
 }

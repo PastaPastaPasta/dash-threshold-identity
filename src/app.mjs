@@ -1,4 +1,4 @@
-import { seedFromMnemonic, participantKeys, kdf } from './derive.mjs';
+import { seedFromMnemonic, participantKeys, kdf, fingerprint } from './derive.mjs';
 import { reduce } from './state.mjs';
 import * as participant from './participant.mjs';
 import { DEFAULT_KEYS, participantIndex } from './ceremony.mjs';
@@ -9,29 +9,57 @@ import { connect, retry, errorText, sdkModule, protocolVersionOf } from './platf
 import { makeProposalBody, reviewProposal, signedTransition } from './proposals.mjs';
 import { describeIntent } from './platform/transitions.mjs';
 import * as core from './platform/core.mjs';
-import { sha256hex, hex, assert, toPlain } from './util.mjs';
+import { sha256hex, hex, assert, toPlain, getOwn, sleep } from './util.mjs';
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const SNAPSHOT = /ExecutionNotProved|affected.?state/i;
+
+function safeDescribe(intent) {
+  try {
+    return describeIntent(intent);
+  } catch {
+    return [`malformed ${String(intent?.type)} proposal`];
+  }
+}
+
+const masked = (n) => (n === undefined || n === null ? -1n : BigInt(n) & 0xffffffffffn);
+const keyHex = (k) => Buffer.from(k.toJSON().data, 'base64').toString('hex');
+const intentKey = (cid, slot, k) => ({ cid, slot, keyId: k.keyId, purpose: k.purpose, securityLevel: k.securityLevel, publicKey: k.groupPublicKey });
+
+async function observed(sdk, intent, derived) {
+  switch (intent.type) {
+    case 'identity-create': {
+      const identity = await sdk.identities.fetch(derived.identityId);
+      return Boolean(identity) && intent.keys.every((k) => identity.publicKeys.some((x) => x.toJSON().id === k.keyId && keyHex(x) === k.publicKey));
+    }
+    case 'identity-update': {
+      const identity = await sdk.identities.fetch(intent.identityId);
+      if (!identity || BigInt(identity.revision) < BigInt(intent.revision)) return false;
+      const keys = identity.publicKeys.map((x) => ({ id: x.toJSON().id, data: keyHex(x), disabled: Boolean(x.toJSON().disabledAt) }));
+      return intent.addKeys.every((k) => keys.some((x) => x.id === k.keyId && x.data === k.publicKey)) && intent.disableKeyIds.every((id) => keys.some((x) => x.id === id && x.disabled));
+    }
+    case 'contract-create': {
+      const contract = await sdk.contracts.fetch(derived.contractId);
+      return Boolean(contract) && contract.ownerId.toBase58() === intent.ownerId;
+    }
+    case 'contract-update': {
+      const contract = await sdk.contracts.fetch(intent.contractId);
+      return Boolean(contract) && Number(contract.version) >= Number(intent.version);
+    }
+    case 'document': {
+      const d = intent.document;
+      const doc = await sdk.documents.get(intent.contractId, d.documentType, derived.documentId);
+      if (d.action === 'delete') return !doc && masked(await sdk.identities.contractNonce(intent.ownerId, intent.contractId)) >= BigInt(intent.identityContractNonce);
+      return Boolean(doc) && (d.action === 'create' || BigInt(doc.revision) >= BigInt(derived.newRevision));
+    }
+    default:
+      return masked(await sdk.identities.nonce(intent.identityId)) >= BigInt(intent.nonce);
+  }
+}
 
 async function confirmOnChain(sdk, intent, derived, attempts = 10) {
   for (let i = 0; i < attempts; i++) {
     try {
-      switch (intent.type) {
-        case 'identity-create':
-          if (await sdk.identities.fetch(derived.identityId)) return true;
-          break;
-        case 'contract-update':
-        case 'document': {
-          const n = await sdk.identities.contractNonce(intent.ownerId, intent.contractId);
-          if (n !== undefined && (BigInt(n) & 0xffffffffffn) >= BigInt(intent.identityContractNonce)) return true;
-          break;
-        }
-        default: {
-          const n = await sdk.identities.nonce(intent.identityId ?? intent.ownerId);
-          if (n !== undefined && (BigInt(n) & 0xffffffffffn) >= BigInt(intent.nonce ?? intent.identityNonce)) return true;
-        }
-      }
+      if (await observed(sdk, intent, derived)) return true;
     } catch {
       /* retry */
     }
@@ -46,8 +74,12 @@ export class Session {
     this.keys = participantKeys(this.seed);
     this.log = log;
     this.sdks = {};
-    if (room) this.data = loadRoom(room) ?? openRoom(room, { relay });
-    if (this.data && relay) this.data.relay = relay;
+    if (room) this.useRoom(room, relay);
+  }
+
+  useRoom(room, relay) {
+    this.data = loadRoom(room) ?? openRoom(room, { relay });
+    if (relay) this.data.relay = relay;
   }
 
   whoami() {
@@ -64,9 +96,7 @@ export class Session {
   }
 
   async sync() {
-    const data = this.requireRoom();
-    if (!data.relay) return { pulled: 0, pushed: 0 };
-    return relaySync(data);
+    return relaySync(this.requireRoom());
   }
 
   async post(envelopes) {
@@ -88,8 +118,7 @@ export class Session {
   }
 
   async joinRoom({ room, relay, name }) {
-    this.data = loadRoom(room) ?? openRoom(room, { relay });
-    if (relay) this.data.relay = relay;
+    this.useRoom(room, relay);
     await this.sync();
     const mine = this.state().hellos[this.keys.authPub];
     if (!mine || mine.name !== name) await this.post([participant.hello(this.keys, room, name)]);
@@ -105,10 +134,11 @@ export class Session {
       members: Object.values(s.hellos).map((h) => ({ name: h.name, authPub: h.authPub, fingerprint: h.fingerprint, me: h.authPub === this.keys.authPub })),
       ceremonies: Object.values(s.ceremonies).map((c) => ({
         cid: c.cid, label: c.config.label, network: c.config.network, threshold: c.config.threshold, status: c.status,
-        participants: c.config.participants.map((p) => ({ index: p.index, name: p.name, fingerprint: s.hellos[p.authPub]?.fingerprint, accepted: p.index in c.accepts, committed: p.index in c.commits, revealed: p.index in c.reveals, completed: p.index in c.completes })),
+        participants: c.config.participants.map((p) => ({ index: p.index, name: p.name, fingerprint: fingerprint(p.authPub, p.transportPub), accepted: Object.hasOwn(c.accepts, p.index), committed: Object.hasOwn(c.commits, p.index), revealed: Object.hasOwn(c.reveals, p.index), completed: Object.hasOwn(c.completes, p.index) })),
         myIndex: participantIndex(c.config, this.keys.authPub),
         keys: c.result ? Object.fromEntries(Object.entries(c.result.keys).map(([slot, k]) => [slot, { keyId: k.keyId, purpose: k.purpose, securityLevel: k.securityLevel, groupPublicKey: k.groupPublicKey }])) : null,
-        problems: [...c.problems, ...c.complaints, ...c.equivocations],
+        problems: [...c.problems, ...(c.status === 'complete' ? [] : c.complaints)],
+        warnings: c.warnings,
       })),
       identities: this.identities(s),
       proposals: Object.values(s.proposals).sort((a, b) => a.at.localeCompare(b.at)).map((p) => this.proposalSummary(s, p)),
@@ -120,21 +150,21 @@ export class Session {
   proposalSummary(s, p) {
     return {
       id: p.id, at: p.at, status: p.status, error: p.error, type: p.body.intent?.type, network: p.body.network,
-      proposer: s.hellos[p.from]?.name ?? p.from.slice(0, 12), summary: describeIntent(p.body.intent), note: p.body.note,
+      proposer: s.hellos[p.from]?.name ?? p.from.slice(0, 12), summary: safeDescribe(p.body.intent), note: p.body.note,
       requirements: p.requirements.map((r) => ({ key: r.key, slot: r.slot, threshold: r.threshold, approvals: Object.keys(r.shares).map(Number), invalid: r.invalidShares })),
-      approvedByMe: this.keys.authPub in p.approvals, rejections: Object.entries(p.rejections).map(([k, v]) => ({ by: s.hellos[k]?.name ?? k.slice(0, 12), reason: v.reason })),
-      broadcasts: p.broadcasts.map((b) => ({ at: b.at, by: s.hellos[b.from]?.name, ...b.result })), derived: p.body.derived,
+      approvedByMe: Object.hasOwn(p.approvals, this.keys.authPub), rejections: Object.entries(p.rejections).map(([k, v]) => ({ by: s.hellos[k]?.name ?? k.slice(0, 12), reason: v.reason })),
+      broadcasts: p.broadcasts.map((b) => ({ at: b.at, by: s.hellos[b.from]?.name ?? b.from.slice(0, 12), ok: b.result.ok === true, error: typeof b.result.error === 'string' ? b.result.error : undefined, stHash: typeof b.result.stHash === 'string' ? b.result.stHash : undefined })), derived: p.body.derived,
     };
   }
 
   identities(s = this.state()) {
-    const out = {};
+    const out = Object.create(null);
     const executed = Object.values(s.proposals).filter((p) => p.status === 'executed').sort((a, b) => a.at.localeCompare(b.at));
     for (const p of executed) {
       const i = p.body.intent;
-      if (i.type === 'identity-create') {
-        out[p.body.derived.identityId] = { identityId: p.body.derived.identityId, network: p.body.network, keys: Object.fromEntries(i.keys.map((k) => [k.keyId, { ...k, disabled: false }])) };
-      } else if (i.type === 'identity-update' && out[i.identityId]) {
+      if (i.type === 'identity-create' && typeof p.body.derived?.identityId === 'string' && Array.isArray(i.keys)) {
+        out[p.body.derived.identityId] = { identityId: p.body.derived.identityId, network: p.body.network, keys: Object.fromEntries(i.keys.map((k) => [Number(k.keyId), { ...k, disabled: false }])) };
+      } else if (i.type === 'identity-update' && Object.hasOwn(out, i.identityId)) {
         for (const k of i.addKeys) out[i.identityId].keys[k.keyId] = { ...k, disabled: false };
         for (const id of i.disableKeyIds) if (out[i.identityId].keys[id]) out[i.identityId].keys[id].disabled = true;
       }
@@ -163,7 +193,7 @@ export class Session {
   ceremony(cid) {
     const s = this.state();
     const list = Object.values(s.ceremonies);
-    const c = cid ? s.ceremonies[cid] ?? list.find((x) => x.cid.startsWith(cid)) : list.at(-1);
+    const c = cid ? (getOwn(s.ceremonies, cid) ?? list.find((x) => x.cid.startsWith(cid))) : list.at(-1);
     assert(c, 'no such ceremony');
     return c;
   }
@@ -211,53 +241,53 @@ export class Session {
 
   async assetLock(network, { duffs, kind = 'registration', index, confirmMainnet = false }) {
     assert(network !== 'mainnet' || confirmMainnet, 'this locks real DASH on mainnet; confirm it explicitly (--confirm-mainnet)');
-    assert(Number.isSafeInteger(duffs) && duffs >= 100000, 'lock at least 100000 duffs');
     const j = journal(`asset-locks-${network}-${this.keys.authPub.slice(0, 16)}`);
     const all = j.get();
-    const key = `${kind}/${index}`;
-    let rec = all[key];
-    const credit = kind === 'registration' ? core.registrationKey(this.seed, network, index) : core.topUpKey(this.seed, network, index);
+    let rec = Object.values(all).find((r) => r.kind === kind && !r.usedBy && (index === undefined || r.index === index)) ?? null;
+    if (rec) this.log(`resuming asset lock ${rec.txid} (${rec.duffs} duffs, ${rec.state})`);
     if (!rec) {
+      assert(Number.isSafeInteger(duffs) && duffs >= 100000, 'lock at least 100000 duffs');
+      const keyIndex = index ?? Object.values(all).filter((r) => r.kind === kind).reduce((m, r) => Math.max(m, r.index + 1), 0);
+      const credit = kind === 'registration' ? core.registrationKey(this.seed, network, keyIndex) : core.topUpKey(this.seed, network, keyIndex);
       const account = core.fundingAccount(this.seed, network);
-      const built = core.buildAssetLock({ network, funding: account, utxoList: await core.utxos(network, account.address), creditAddress: credit.address, duffs });
-      rec = { kind, index, duffs, txid: built.txid, vout: 0, state: 'built', creditAddress: credit.address };
-      all[key] = rec;
+      const built = core.buildAssetLock({ network, funding: account, utxoList: await core.verifiedUtxos(network, account.address), creditAddress: credit.address, duffs });
+      rec = { kind, index: keyIndex, duffs, txid: built.txid, vout: 0, state: 'built', creditAddress: credit.address, rawtx: built.rawtx, fee: built.fee };
+      all[`${kind}/${keyIndex}`] = rec;
       j.set(all);
-      await core.broadcastRaw(network, built.rawtx);
+    }
+    if (rec.state === 'built') {
+      if (!(await core.fetchTx(network, rec.txid))) await core.broadcastRaw(network, rec.rawtx);
       rec.state = 'broadcast';
       j.set(all);
-      this.log(`asset lock ${built.txid} broadcast (${duffs} duffs, fee ${built.fee})`);
+      this.log(`asset lock ${rec.txid} broadcast (${rec.duffs} duffs, fee ${rec.fee})`);
     }
     if (rec.state !== 'chainlocked') {
       const sdk = await this.sdk(network);
       const lock = await core.waitForChainLock(network, sdk, rec.txid, { onWait: (m) => this.log(m) });
-      rec.coreChainLockedHeight = lock.coreChainLockedHeight;
-      rec.height = lock.height;
-      rec.state = 'chainlocked';
+      Object.assign(rec, { coreChainLockedHeight: lock.coreChainLockedHeight, height: lock.height, state: 'chainlocked' });
       j.set(all);
     }
-    return rec;
-  }
-
-  nextAssetLockIndex(network, kind) {
-    const all = journal(`asset-locks-${network}-${this.keys.authPub.slice(0, 16)}`).get();
-    const used = Object.values(all).filter((r) => r.kind === kind).map((r) => r.index);
-    return used.length ? Math.max(...used) + 1 : 0;
+    const markUsed = (by) => {
+      rec.usedBy = by;
+      j.set(all);
+    };
+    return { ...rec, markUsed };
   }
 
   async proposeIdentityCreate({ cid, duffs, index, confirmMainnet = false }) {
     const c = this.ceremony(cid);
     assert(c.status === 'complete', `ceremony is ${c.status}`);
     const network = c.config.network;
-    const keyIndex = index ?? this.nextAssetLockIndex(network, 'registration');
-    const lock = await this.assetLock(network, { duffs, kind: 'registration', index: keyIndex, confirmMainnet });
+    const lock = await this.assetLock(network, { duffs, kind: 'registration', index, confirmMainnet });
     const intent = {
       type: 'identity-create',
-      assetLockProof: { coreChainLockedHeight: lock.coreChainLockedHeight, txid: lock.txid, vout: 0, keyIndex, funder: this.keys.authPub },
-      keys: Object.values(c.result.keys).map((k) => ({ cid: c.cid, slot: k.slot, keyId: k.keyId, purpose: k.purpose, securityLevel: k.securityLevel, publicKey: k.groupPublicKey })),
+      assetLockProof: { coreChainLockedHeight: lock.coreChainLockedHeight, txid: lock.txid, vout: 0, keyIndex: lock.index, funder: this.keys.authPub },
+      keys: Object.values(c.result.keys).map((k) => intentKey(c.cid, k.slot, k)),
       userFeeIncrease: 0,
     };
-    return this.propose(network, intent, `fund ${duffs} duffs`);
+    const out = await this.propose(network, intent, `funded with ${lock.duffs} duffs`);
+    lock.markUsed(out.id);
+    return out;
   }
 
   async propose(network, intent, note = '') {
@@ -317,9 +347,9 @@ export class Session {
       case 'identity-update': {
         const addKeys = (args.addKeys ?? []).map(({ cid, slot }) => {
           const c = this.ceremony(cid);
-          assert(c.status === 'complete' && c.result.keys[slot], `no completed key ${slot} in ceremony ${cid}`);
-          const k = c.result.keys[slot];
-          return { cid: c.cid, slot, keyId: k.keyId, purpose: k.purpose, securityLevel: k.securityLevel, publicKey: k.groupPublicKey };
+          const k = c.status === 'complete' ? getOwn(c.result.keys, slot) : null;
+          assert(k, `no completed key ${slot} in ceremony ${cid}`);
+          return intentKey(c.cid, slot, k);
         });
         intent = { type: kind, ...base, identityId: id.identityId, revision: String(ctx.revision + 1n), nonce: String(ctx.nonce + 1n), addKeys, disableKeyIds: args.disableKeyIds ?? [], signer: this.signerFor(id, args.signer ?? 'master') };
         break;
@@ -341,14 +371,15 @@ export class Session {
     await this.sync();
     const { s, p } = this.findProposal(proposalId);
     const sdk = online ? await this.sdk(p.body.network).catch(() => null) : null;
-    const report = await reviewProposal(s, p.id, { sdk });
+    const report = await reviewProposal(s, p.id, { sdk, online, me: this.keys.authPub });
     return { id: p.id, proposer: s.hellos[p.from]?.name, ...report, proposal: this.proposalSummary(s, p), intent: p.body.intent };
   }
 
-  async approve(proposalId, { confirm = async () => true, online = true } = {}) {
+  async approve(proposalId, { confirm = async () => true, online = true, acknowledgeKeys = false } = {}) {
     const report = await this.review(proposalId, { online });
     assert(report.ok, `refusing to approve: ${report.problems.join('; ')}`);
     assert(!report.proposal.approvedByMe, 'you already approved this proposal');
+    assert(!report.attention.length || acknowledgeKeys, `this proposal puts keys under a group's control; review who holds them and approve again acknowledging that:\n${report.attention.join('\n')}`);
     if (!(await confirm(report))) return { id: report.id, approved: false };
     await this.post([participant.approve(this.seed, this.keys, this.data.room, this.state(), report.id)]);
     return { id: report.id, approved: true, status: this.findProposal(report.id).p.status };
@@ -363,7 +394,7 @@ export class Session {
   async execute(proposalId) {
     await this.sync();
     const { s, p } = this.findProposal(proposalId);
-    assert(p.status === 'ready', `proposal is ${p.status}`);
+    assert(p.status === 'ready' || p.status === 'executed', `proposal is ${p.status}`);
     const signatures = participant.combine(s, p.id);
     const built = await signedTransition(s, p.id, signatures);
     const intent = p.body.intent;
@@ -382,7 +413,7 @@ export class Session {
       result = SNAPSHOT.test(text) ? { ok: true, stHash, note: 'accepted; result returned as an affected-state snapshot' } : { ok: false, stHash, error: text };
     }
     if (result.ok) {
-      result.confirmed = await confirmOnChain(sdk, intent, p.body.derived);
+      result.confirmed = await confirmOnChain(sdk, intent, built.derived);
       if (!result.confirmed) Object.assign(result, { ok: false, error: 'broadcast returned, but a proved read does not show the change' });
     }
     result.signers = Object.fromEntries(Object.entries(signatures).map(([k, v]) => [k, v.signers]));
@@ -393,9 +424,8 @@ export class Session {
   async topUp({ identityId, duffs, index, confirmMainnet = false }) {
     await this.sync();
     const id = this.identity(identityId);
-    const keyIndex = index ?? this.nextAssetLockIndex(id.network, 'topup');
-    const lock = await this.assetLock(id.network, { duffs, kind: 'topup', index: keyIndex, confirmMainnet });
-    const st = await core.topUpTransition({ network: id.network, seed: this.seed, index: keyIndex, identityId: id.identityId, proof: { coreChainLockedHeight: lock.coreChainLockedHeight, txid: lock.txid, vout: 0 } });
+    const lock = await this.assetLock(id.network, { duffs, kind: 'topup', index, confirmMainnet });
+    const st = await core.topUpTransition({ network: id.network, seed: this.seed, index: lock.index, identityId: id.identityId, proof: { coreChainLockedHeight: lock.coreChainLockedHeight, txid: lock.txid, vout: 0 } });
     const sdk = await this.sdk(id.network);
     const before = (await retry(() => sdk.identities.balance(id.identityId))) ?? 0n;
     try {
@@ -405,7 +435,10 @@ export class Session {
     }
     for (let i = 0; i < 10; i++) {
       const now = (await retry(() => sdk.identities.balance(id.identityId))) ?? 0n;
-      if (now > before) return { identityId: id.identityId, assetLock: lock.txid, duffs, balanceBefore: before, balanceAfter: now };
+      if (now > before) {
+        lock.markUsed(`topup:${id.identityId}`);
+        return { identityId: id.identityId, assetLock: lock.txid, duffs: lock.duffs, balanceBefore: before, balanceAfter: now };
+      }
       await sleep(3000);
     }
     throw new Error('top-up broadcast, but the proved balance did not increase');
@@ -419,7 +452,7 @@ export class Session {
     assert(proved.data, 'identity not found');
     const keys = proved.data.publicKeys.map((k) => {
       const j = k.toJSON();
-      const data = Buffer.from(j.data, 'base64').toString('hex');
+      const data = keyHex(k);
       const local = id.keys[j.id];
       return { id: j.id, type: j.type, purpose: j.purpose, securityLevel: j.securityLevel, disabledAt: j.disabledAt ?? null, publicKey: data, slot: local?.slot ?? null, matchesGroupKey: local ? local.publicKey === data : false };
     });

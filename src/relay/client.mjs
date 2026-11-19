@@ -12,10 +12,13 @@ const base = (relay, room) => `${relay.replace(/\/$/, '')}/v1/rooms/${encodeURIC
 
 export async function pull(data) {
   let added = 0;
+  data.cursors ??= {};
   for (;;) {
-    const page = await call(`${base(data.relay, data.room)}?after=${data.cursor ?? 0}`);
+    const after = data.cursors[data.relay] ?? 0;
+    const page = await call(`${base(data.relay, data.room)}?after=${after}`);
     added += addMessages(data, page.messages.map((x) => x.envelope));
-    data.cursor = page.next;
+    if (!Number.isSafeInteger(page.next) || page.next <= after) break;
+    data.cursors[data.relay] = page.next;
     if (!page.more) break;
   }
   saveRoom(data);

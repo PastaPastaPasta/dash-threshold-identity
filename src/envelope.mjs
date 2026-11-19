@@ -23,6 +23,7 @@ export function verifyEnvelope(envelope) {
   try {
     const { sig, ...unsigned } = envelope;
     if (unsigned.v !== 1 || typeof unsigned.type !== 'string' || typeof unsigned.room !== 'string') return false;
+    if (typeof unsigned.at !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z$/.test(unsigned.at)) return false;
     if (!isHex(unsigned.from, 32) || !isHex(sig, 64)) return false;
     if (canonical(unsigned.body).length > MAX_BODY) return false;
     return ed25519.verify(unhex(sig), signingBytes(unsigned), unhex(unsigned.from));
@@ -31,7 +32,7 @@ export function verifyEnvelope(envelope) {
   }
 }
 
-function boxKeys(mySecret, theirPub, context) {
+export function boxKeys(mySecret, theirPub, context) {
   const shared = x25519.getSharedSecret(mySecret, unhex(theirPub));
   assert(shared.some((b) => b !== 0), 'x25519 produced the all-zero shared secret (low-order public key)');
   const okm = hkdf(sha256, shared, utf8(`${PROTOCOL}/box`), lengthPrefixed(...context), 44);
@@ -47,7 +48,6 @@ export function encryptBox(mySecret, theirPub, context, plaintext) {
   return hex(chacha20poly1305(key, nonce, aad).encrypt(utf8(plaintext)));
 }
 
-export function decryptBox(mySecret, theirPub, context, ciphertextHex) {
-  const { key, nonce, aad } = boxKeys(mySecret, theirPub, context);
-  return new TextDecoder().decode(chacha20poly1305(key, nonce, aad).decrypt(unhex(ciphertextHex)));
+export function decryptWithKey(key, nonce, context, ciphertextHex) {
+  return new TextDecoder().decode(chacha20poly1305(key, nonce, lengthPrefixed('aad', ...context)).decrypt(unhex(ciphertextHex)));
 }

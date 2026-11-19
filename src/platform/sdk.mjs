@@ -1,4 +1,5 @@
 import * as evo from '@dashevo/evo-sdk';
+import { sleep } from '../util.mjs';
 
 let ready;
 export async function sdkModule() {
@@ -22,7 +23,7 @@ export async function connect(network, { timeoutMs = 30000, attempts = 6 } = {})
       return sdk;
     } catch (e) {
       last = e;
-      await new Promise((r) => setTimeout(r, 4000));
+      await sleep(4000);
     }
   }
   throw new Error(`could not connect to ${network}: ${errorText(last)}`);
@@ -41,7 +42,7 @@ export async function retry(fn, attempts = 5, delayMs = 2500) {
       return await fn();
     } catch (e) {
       last = e;
-      await new Promise((r) => setTimeout(r, delayMs));
+      await sleep(delayMs);
     }
   }
   throw last;

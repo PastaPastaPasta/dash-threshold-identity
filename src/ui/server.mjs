@@ -21,17 +21,17 @@ async function readBody(req) {
 }
 
 function routes(session) {
-  const room = async (b) => {
-    if (b.room) {
-      const r = loadRoom(b.room);
-      if (!r) throw new Error(`unknown room ${b.room}`);
-      session.data = r;
-    }
-  };
   return {
     'GET /api/status': async () => (session.data ? { ...session.status(), rooms: listRooms() } : { me: session.whoami(), rooms: listRooms() }),
     'POST /api/sync': async () => session.sync(),
-    'POST /api/room/select': async (b) => { await room(b); return session.status(); },
+    'POST /api/room/select': async (b) => {
+      if (b.room) {
+        const r = loadRoom(b.room);
+        if (!r) throw new Error(`unknown room ${b.room}`);
+        session.data = r;
+      }
+      return session.status();
+    },
     'POST /api/room/create': async (b) => session.createRoom({ label: b.label, relay: b.relay || undefined, name: b.name }),
     'POST /api/room/join': async (b) => session.joinRoom({ room: b.room, relay: b.relay || undefined, name: b.name }),
     'GET /api/room/export': async () => exportBundle(loadRoom(session.requireRoom().room)),
@@ -44,7 +44,7 @@ function routes(session) {
     'GET /api/identity': async (b) => session.showIdentity(b.identityId),
     'POST /api/propose': async (b) => session.prepare(b.kind, b.args ?? {}),
     'GET /api/review': async (b) => session.review(b.id),
-    'POST /api/approve': async (b) => session.approve(b.id, { confirm: async () => true }),
+    'POST /api/approve': async (b) => session.approve(b.id, { confirm: async () => true, acknowledgeKeys: b.acknowledgeKeys === true }),
     'POST /api/reject': async (b) => session.reject(b.id, b.reason ?? ''),
     'POST /api/execute': async (b) => session.execute(b.id),
   };
@@ -75,8 +75,9 @@ export function serveUi(session, { port = 8770, host = '127.0.0.1' } = {}) {
       const body = req.method === 'GET' ? Object.fromEntries(url.searchParams) : await readBody(req);
       return handler(body);
     };
-    const job = queue.then(run, run);
-    queue = job.catch(() => {});
+    const readOnly = req.method === 'GET' && url.pathname === '/api/status';
+    const job = readOnly ? run() : queue.then(run, run);
+    if (!readOnly) queue = job.catch(() => {});
     try {
       send(200, await job);
     } catch (e) {

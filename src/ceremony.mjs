@@ -1,12 +1,13 @@
 import { sha512 } from '@noble/hashes/sha2.js';
-import { digest, isHex, lengthPrefixed, assert, hex } from './util.mjs';
+import { digest, isHex, lengthPrefixed, assert, hex, unhex, ROOM_PATTERN } from './util.mjs';
 import { dkgCoefficients, deterministicNonce } from './derive.mjs';
 import { G1, g1, g1Hex, mod, bytesToScalar, evalPoly, evalCommitments, scalarToHex, scalarFromHex } from './bls.mjs';
-import { boxContext, encryptBox, decryptBox, PROTOCOL } from './envelope.mjs';
+import { boxContext, encryptBox, decryptWithKey, boxKeys, PROTOCOL } from './envelope.mjs';
 
 export const PURPOSES = ['AUTHENTICATION', 'ENCRYPTION', 'DECRYPTION', 'TRANSFER', 'VOTING', 'OWNER'];
 export const SECURITY_LEVELS = ['MASTER', 'CRITICAL', 'HIGH', 'MEDIUM'];
 export const NETWORKS = ['testnet', 'mainnet'];
+export const SLOT_PATTERN = /^[a-z][a-z0-9-]{0,31}$/;
 
 export const DEFAULT_KEYS = [
   { slot: 'master', keyId: 0, purpose: 'AUTHENTICATION', securityLevel: 'MASTER' },
@@ -15,9 +16,10 @@ export const DEFAULT_KEYS = [
   { slot: 'transfer', keyId: 3, purpose: 'TRANSFER', securityLevel: 'CRITICAL' },
 ];
 
-export function makeConfig({ network, label, threshold, organizer, participants, keys = DEFAULT_KEYS, createdAt = new Date().toISOString() }) {
+export function makeConfig({ room, network, label, threshold, organizer, participants, keys = DEFAULT_KEYS, createdAt = new Date().toISOString() }) {
   const config = {
     protocol: PROTOCOL,
+    room,
     network,
     label,
     threshold,
@@ -31,9 +33,12 @@ export function makeConfig({ network, label, threshold, organizer, participants,
 }
 
 export function validateConfig(config) {
+  assert(config && typeof config === 'object', 'config must be an object');
   assert(config.protocol === PROTOCOL, `unsupported protocol ${config.protocol}`);
+  assert(typeof config.room === 'string' && ROOM_PATTERN.test(config.room), 'config must name its room');
   assert(NETWORKS.includes(config.network), `network must be one of ${NETWORKS.join(', ')}`);
   assert(typeof config.label === 'string' && config.label.length > 0 && config.label.length <= 120, 'label must be 1-120 characters');
+  assert(Array.isArray(config.participants) && Array.isArray(config.keys), 'participants and keys must be lists');
   const n = config.participants.length;
   assert(n >= 2 && n <= 64, 'between 2 and 64 participants');
   assert(Number.isInteger(config.threshold) && config.threshold >= 2 && config.threshold <= n, `threshold must be between 2 and ${n}`);
@@ -52,7 +57,7 @@ export function validateConfig(config) {
   const slots = new Set();
   const ids = new Set();
   for (const k of config.keys) {
-    assert(/^[a-z][a-z0-9-]{0,31}$/.test(k.slot), `bad slot name ${k.slot}`);
+    assert(SLOT_PATTERN.test(k.slot), `bad slot name ${k.slot}`);
     assert(Number.isInteger(k.keyId) && k.keyId >= 0 && k.keyId < 1000, `bad keyId for ${k.slot}`);
     assert(PURPOSES.includes(k.purpose) && SECURITY_LEVELS.includes(k.securityLevel), `bad purpose/level for ${k.slot}`);
     slots.add(k.slot);
@@ -144,15 +149,17 @@ export function receiveShares(seed, keys, config, cid, reveals) {
       if (!reveal) { complaints.push({ against: p.index, slot, reason: 'no reveal' }); continue; }
       const s = reveal.slots[slot];
       const ctx = boxContext({ cid, slot, from: p.index, to: me, fromTransport: p.transportPub, toTransport: keys.transportPub });
+      const material = boxKeys(keys.transportSecret, p.transportPub, ctx);
+      const evidence = { key: hex(material.key), nonce: hex(material.nonce) };
       let value;
       try {
-        value = scalarFromHex(decryptBox(keys.transportSecret, p.transportPub, ctx, s.boxes[me]));
+        value = scalarFromHex(decryptWithKey(material.key, material.nonce, ctx, s.boxes[me]));
       } catch {
-        complaints.push({ against: p.index, slot, reason: 'share box does not decrypt' });
+        complaints.push({ against: p.index, slot, reason: 'share box does not decrypt', evidence });
         continue;
       }
       if (!g1(value).equals(evalCommitments(s.commitments, me))) {
-        complaints.push({ against: p.index, slot, reason: 'share does not match commitments' });
+        complaints.push({ against: p.index, slot, reason: 'share does not match commitments', evidence });
         continue;
       }
       share = mod(share + value);
@@ -196,6 +203,20 @@ export function buildCompletion(config, cid, reveals, revealDigests, shares) {
   };
 }
 
-export const shareHex = (share) => scalarToHex(share);
+export function judgeComplaint(config, cid, complaint, reveal) {
+  try {
+    const accuser = config.participants.find((p) => p.index === complaint.from);
+    const accused = config.participants.find((p) => p.index === complaint.against);
+    const box = reveal?.slots?.[complaint.slot]?.boxes?.[complaint.from];
+    if (!accuser || !accused || !reveal) return 'unproven';
+    if (!box) return 'proven';
+    if (!complaint.evidence) return 'unproven';
+    const ctx = boxContext({ cid, slot: complaint.slot, from: accused.index, to: accuser.index, fromTransport: accused.transportPub, toTransport: accuser.transportPub });
+    const value = scalarFromHex(decryptWithKey(unhex(complaint.evidence.key), unhex(complaint.evidence.nonce), ctx, box));
+    return g1(value).equals(evalCommitments(reveal.slots[complaint.slot].commitments, accuser.index)) ? 'false' : 'proven';
+  } catch {
+    return 'unproven';
+  }
+}
+
 export const publicShareOf = (share) => g1Hex(g1(share));
-export { hex };
