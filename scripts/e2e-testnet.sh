@@ -32,6 +32,7 @@ flow() {
 say "room"
 ROOM=$(run p1 room create --label "dti e2e $(date -u +%FT%TZ)" --name alice 2>>"$LOG" | field room)
 echo "$ROOM" > "$DIR/room.txt"
+export DTI_ROOM=$ROOM
 names=(x bob carol dave erin)
 for i in 2 3 4 5; do run "p$i" room join "$ROOM" --name "${names[$((i - 1))]}" >>"$LOG" 2>&1; done
 
