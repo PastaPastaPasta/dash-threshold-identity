@@ -79,8 +79,9 @@ function renderRoom() {
     : 'No room selected.';
   $('#members').innerHTML = `<tr><th>Name</th><th>Fingerprint</th><th>Key</th></tr>${(state.members ?? []).map((m) => `<tr><td>${esc(m.name)}${m.me ? ' <span class="chip">you</span>' : ''}</td><td class="fp">${esc(m.fingerprint)}</td><td class="mono">${esc(short(m.authPub, 20))}</td></tr>`).join('')}`;
   const members = (state.members ?? []).map((m) => `<label><input type="checkbox" name="member" value="${esc(m.authPub)}"${unchecked.has(m.authPub) ? '' : ' checked'}> ${esc(m.name)}</label>`).join('');
-  if (rendered.get($('#ceremony-members')) !== members) {
-    rendered.set($('#ceremony-members'), members);
+  const roster = (state.members ?? []).map((m) => `${m.authPub}:${m.name}`).join(',');
+  if (rendered.get($('#ceremony-members')) !== roster) {
+    rendered.set($('#ceremony-members'), roster);
     $('#ceremony-members').innerHTML = members;
   }
 }
