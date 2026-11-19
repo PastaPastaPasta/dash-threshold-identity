@@ -1,0 +1,6 @@
+[
+  { "slot": "master", "keyId": 4, "purpose": "AUTHENTICATION", "securityLevel": "MASTER" },
+  { "slot": "critical", "keyId": 5, "purpose": "AUTHENTICATION", "securityLevel": "CRITICAL" },
+  { "slot": "high", "keyId": 6, "purpose": "AUTHENTICATION", "securityLevel": "HIGH" },
+  { "slot": "transfer", "keyId": 7, "purpose": "TRANSFER", "securityLevel": "CRITICAL" }
+]

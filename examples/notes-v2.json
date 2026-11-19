@@ -1,0 +1,13 @@
+{
+  "documentSchemas": {
+    "note": {
+      "type": "object",
+      "properties": {
+        "message": { "type": "string", "maxLength": 280, "position": 0 },
+        "mood": { "type": "string", "maxLength": 32, "position": 1 }
+      },
+      "required": ["message", "$createdAt", "$updatedAt"],
+      "additionalProperties": false
+    }
+  }
+}

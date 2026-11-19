@@ -1,0 +1,59 @@
+import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
+import { handle, memoryStore } from './core.mjs';
+
+export function fileStore(dir) {
+  const mem = memoryStore();
+  fs.mkdirSync(dir, { recursive: true });
+  const file = (room) => path.join(dir, `${room}.jsonl`);
+  const loaded = new Set();
+  const load = (room) => {
+    if (loaded.has(room)) return;
+    loaded.add(room);
+    if (!fs.existsSync(file(room))) return;
+    const r = { rows: [], ids: new Set() };
+    for (const line of fs.readFileSync(file(room), 'utf8').split('\n').filter(Boolean)) {
+      const row = JSON.parse(line);
+      r.rows.push(row);
+      r.ids.add(row.id);
+    }
+    mem.rooms.set(room, r);
+  };
+  return {
+    async append(room, id, body) {
+      load(room);
+      const seq = await mem.append(room, id, body);
+      if (seq !== null) fs.appendFileSync(file(room), `${JSON.stringify({ seq, id, body })}\n`);
+      return seq;
+    },
+    async list(room, after, limit) { load(room); return mem.list(room, after, limit); },
+    async ids(room) { load(room); return mem.ids(room); },
+    async count(room) { load(room); return mem.count(room); },
+  };
+}
+
+export async function toRequest(req, origin) {
+  const chunks = [];
+  for await (const c of req) chunks.push(c);
+  const body = chunks.length ? Buffer.concat(chunks) : undefined;
+  return new Request(new URL(req.url, origin), { method: req.method, headers: req.headers, body: ['GET', 'HEAD'].includes(req.method) ? undefined : body });
+}
+
+export async function sendResponse(res, response) {
+  res.writeHead(response.status, Object.fromEntries(response.headers));
+  res.end(Buffer.from(await response.arrayBuffer()));
+}
+
+export function serveRelay({ port = 8787, host = '127.0.0.1', dir = null } = {}) {
+  const store = dir ? fileStore(dir) : memoryStore();
+  const server = http.createServer(async (req, res) => {
+    try {
+      await sendResponse(res, await handle(await toRequest(req, `http://${host}:${port}`), async () => store));
+    } catch (e) {
+      res.writeHead(500, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+  });
+  return new Promise((resolve) => server.listen(port, host, () => resolve(server)));
+}
