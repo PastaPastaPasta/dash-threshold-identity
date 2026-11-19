@@ -15,7 +15,10 @@ export function fileStore(dir) {
       return;
     }
     const r = { rows: [], ids: new Set(), policy: null };
-    for (const line of fs.readFileSync(file(room), 'utf8').split('\n').filter(Boolean)) {
+    const text = fs.readFileSync(file(room), 'utf8');
+    const complete = text.endsWith('\n') ? text : text.slice(0, text.lastIndexOf('\n') + 1);
+    if (complete.length !== text.length) fs.truncateSync(file(room), Buffer.byteLength(complete));
+    for (const line of complete.split('\n').filter(Boolean)) {
       const row = JSON.parse(line);
       r.rows.push(row);
       r.ids.add(row.id);
@@ -32,7 +35,13 @@ export function fileStore(dir) {
       const r = mem.rooms.get(room);
       if (r.ids.has(id)) return null;
       const seq = r.rows.length + 1;
-      fs.appendFileSync(file(room), `${JSON.stringify({ seq, id, body, from })}\n`);
+      const size = fs.existsSync(file(room)) ? fs.statSync(file(room)).size : 0;
+      try {
+        fs.appendFileSync(file(room), `${JSON.stringify({ seq, id, body, from })}\n`);
+      } catch (e) {
+        if (fs.existsSync(file(room))) fs.truncateSync(file(room), size);
+        throw e;
+      }
       r.ids.add(id);
       r.rows.push({ seq, id, body, from });
       return seq;
@@ -50,14 +59,15 @@ export function fileStore(dir) {
 export async function toRequest(req, origin, limit = MAX_MESSAGE_BYTES + 1024) {
   const chunks = [];
   let size = 0;
-  for await (const c of req) {
-    size += c.length;
-    if (size > limit) {
-      req.destroy();
-      throw Object.assign(new Error('message too large'), { status: 413 });
-    }
-    chunks.push(c);
-  }
+  await new Promise((resolve, reject) => {
+    req.on('data', (c) => {
+      size += c.length;
+      if (size <= limit) chunks.push(c);
+    });
+    req.on('end', resolve);
+    req.on('error', reject);
+  });
+  if (size > limit) throw Object.assign(new Error('message too large'), { status: 413 });
   const body = chunks.length ? Buffer.concat(chunks) : undefined;
   return new Request(new URL(req.url, origin), { method: req.method, headers: req.headers, body: ['GET', 'HEAD'].includes(req.method) ? undefined : body });
 }

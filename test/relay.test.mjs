@@ -51,6 +51,24 @@ test('the relay refuses forged, misrouted and malformed messages', async () => {
   assert.equal((await call('POST', `/v1/rooms/${ROOM}/messages`, big)).status, 413);
 });
 
+test('the Node relay answers 413 to an oversized body and recovers from a torn last line', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dti-relay-'));
+  let server = await serveRelay({ port: 0, dir });
+  const url = (s) => `http://127.0.0.1:${s.address().port}/v1/rooms/${ROOM}/messages`;
+  const big = await fetch(url(server), { method: 'POST', body: 'x'.repeat(2 * 1024 * 1024) });
+  assert.equal(big.status, 413);
+  await fetch(url(server), { method: 'POST', body: JSON.stringify(hello(ps[0].keys, ROOM, 'a')) });
+  server.close();
+  fs.appendFileSync(path.join(dir, `${ROOM}.jsonl`), '{"seq":2,"id":"torn');
+  server = await serveRelay({ port: 0, dir });
+  const ok = await fetch(url(server), { method: 'POST', body: JSON.stringify(hello(ps[1].keys, ROOM, 'b')) });
+  const page = await (await fetch(`${url(server)}?after=0`)).json();
+  server.close();
+  assert.equal(ok.status, 200);
+  assert.deepEqual(page.messages.map((m) => m.seq), [1, 2]);
+  fs.rmSync(dir, { recursive: true });
+});
+
 test('the Node relay keeps messages on disk across restarts', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dti-relay-'));
   let server = await serveRelay({ port: 0, dir });
