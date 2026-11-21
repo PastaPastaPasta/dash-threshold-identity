@@ -32,7 +32,8 @@ export function admit(policy, envelope) {
   if (!p.owner) return { ok: false, reason: 'the room creator must post the first message' };
   if (!p.pinned.includes(envelope.from)) return { ok: false, reason: 'only the room creator and members named in a ceremony may post this' };
   if (envelope.type !== 'config') return { ok: true, next: p };
-  const named = (envelope.body?.config?.participants ?? []).map((x) => x?.authPub).filter((k) => isHex(k, 32));
+  const listed = envelope.body?.config?.participants;
+  const named = (Array.isArray(listed) ? listed : []).map((x) => x?.authPub).filter((k) => isHex(k, 32));
   return { ok: true, next: { ...p, pinned: [...new Set([...p.pinned, ...named])] } };
 }
 

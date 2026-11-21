@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { people } from './helpers.mjs';
-import { handle, memoryStore } from '../src/relay/core.mjs';
+import { admit, handle, memoryStore } from '../src/relay/core.mjs';
 import { serveRelay } from '../src/relay/node-server.mjs';
 import { hello } from '../src/participant.mjs';
 import { sealEnvelope } from '../src/envelope.mjs';
@@ -41,6 +41,13 @@ test('only the room creator and ceremony members can post beyond a hello', async
   assert.equal(await post(sealEnvelope(outsider.keys, room, 'accept', { cid: 'x' })), 403);
 });
 
+test('a config whose participants is not a list names no one', () => {
+  const [owner] = ps;
+  const start = admit(null, hello(owner.keys, 'odd-config-room', 'owner')).next;
+  const after = admit(start, sealEnvelope(owner.keys, 'odd-config-room', 'config', { config: { participants: {} } }));
+  assert.deepEqual(after, { ok: true, next: start });
+});
+
 test('the relay refuses forged, misrouted and malformed messages', async () => {
   const forged = { ...hello(ps[0].keys, ROOM, 'a'), body: { name: 'mallory', transportPub: ps[1].keys.transportPub } };
   assert.equal((await call('POST', `/v1/rooms/${ROOM}/messages`, forged)).status, 400);
@@ -51,9 +58,13 @@ test('the relay refuses forged, misrouted and malformed messages', async () => {
   assert.equal((await call('POST', `/v1/rooms/${ROOM}/messages`, big)).status, 413);
 });
 
-test('the Node relay answers 413 to an oversized body and recovers from a torn last line', async () => {
+test('the Node relay answers 413 to an oversized body and recovers from a torn last line', async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dti-relay-'));
   let server = await serveRelay({ port: 0, dir });
+  t.after(() => {
+    server.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
   const url = (s) => `http://127.0.0.1:${s.address().port}/v1/rooms/${ROOM}/messages`;
   const big = await fetch(url(server), { method: 'POST', body: 'x'.repeat(2 * 1024 * 1024) });
   assert.equal(big.status, 413);
@@ -66,12 +77,15 @@ test('the Node relay answers 413 to an oversized body and recovers from a torn l
   server.close();
   assert.equal(ok.status, 200);
   assert.deepEqual(page.messages.map((m) => m.seq), [1, 2]);
-  fs.rmSync(dir, { recursive: true });
 });
 
-test('the Node relay keeps messages on disk across restarts', async () => {
+test('the Node relay keeps messages on disk across restarts', async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dti-relay-'));
   let server = await serveRelay({ port: 0, dir });
+  t.after(() => {
+    server.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
   const url = (s) => `http://127.0.0.1:${s.address().port}/v1/rooms/${ROOM}/messages`;
   await fetch(url(server), { method: 'POST', body: JSON.stringify(hello(ps[0].keys, ROOM, 'a')) });
   server.close();
@@ -81,5 +95,4 @@ test('the Node relay keeps messages on disk across restarts', async () => {
   server.close();
   assert.equal(page.messages.length, 1);
   assert.equal(outsider.status, 403);
-  fs.rmSync(dir, { recursive: true });
 });

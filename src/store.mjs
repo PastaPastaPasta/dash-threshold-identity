@@ -44,7 +44,7 @@ function withLock(file, fn) {
     } catch (e) {
       if (e.code !== 'EEXIST') throw e;
       if (Date.now() - fs.statSync(lock, { throwIfNoEntry: false })?.mtimeMs > 30000) fs.rmSync(lock, { recursive: true, force: true });
-      assert(Date.now() < deadline, `room file is locked by another process (${lock})`);
+      assert(Date.now() < deadline, `${path.basename(file)} is locked by another process (${lock})`);
       Atomics.wait(pause, 0, 0, 50);
     }
   }
@@ -57,8 +57,8 @@ function withLock(file, fn) {
 
 function merged(data, onDisk) {
   if (!onDisk) return data.messages;
-  const ids = new Set(data.messages.map(envelopeId));
-  return [...data.messages, ...onDisk.messages.filter((m) => !ids.has(envelopeId(m)))];
+  const ids = new Set(onDisk.messages.map(envelopeId));
+  return [...onDisk.messages, ...data.messages.filter((m) => !ids.has(envelopeId(m)))];
 }
 
 export function saveRoom(data) {
@@ -105,5 +105,14 @@ export function importBundle(bundle) {
 
 export function journal(name) {
   const file = path.join(home(), 'journal', `${name}.json`);
-  return { get: () => readJson(file, {}), set: (value) => writeJson(file, value) };
+  return {
+    get: () => readJson(file, {}),
+    update: (fn) =>
+      withLock(file, () => {
+        const value = readJson(file, {});
+        fn(value);
+        writeJson(file, value);
+        return value;
+      }),
+  };
 }

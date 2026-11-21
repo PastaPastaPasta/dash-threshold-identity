@@ -8,6 +8,7 @@ const short = (s, n = 12) => (s && s.length > n ? `${s.slice(0, n)}…` : s ?? '
 let state = null;
 let busy = false;
 const unchecked = new Set();
+let activeRoom = null;
 
 const rendered = new WeakMap();
 
@@ -74,6 +75,10 @@ const statusChip = (s) => {
 function renderRoom() {
   $('#me').innerHTML = state.me ? `You: <span class="fp">${esc(state.me.fingerprint)}</span>` : '';
   setOptions($('#room-select'), (state.rooms ?? []).map((r) => `<option value="${esc(r.room)}" ${r.room === state.room ? 'selected' : ''}>${esc(r.label ?? r.room)} (${r.messages} messages)</option>`).join(''));
+  if (state.room && state.room !== activeRoom) {
+    activeRoom = state.room;
+    $('#room-select').value = state.room;
+  }
   $('#room-info').innerHTML = state.room
     ? `Room <code>${esc(state.room)}</code><br>Relay: ${state.relay ? `<code>${esc(state.relay)}</code>` : 'none (exchange bundles as files)'}${state.invalidMessages ? `<br><span class="chip bad">${state.invalidMessages} invalid messages ignored</span>` : ''}`
     : 'No room selected.';

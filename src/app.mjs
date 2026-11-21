@@ -251,6 +251,12 @@ export class Session {
     if (index !== undefined) assert(!all[`${kind}/${index}`]?.usedBy, `asset lock ${kind}/${index} was already used`);
     let rec = index !== undefined ? (all[`${kind}/${index}`] ?? null) : (Object.values(all).find((r) => r.kind === kind && !r.usedBy && !r.abandoned && r.duffs === duffs) ?? null);
     if (rec?.abandoned) delete rec.abandoned;
+    const save = () => j.update((latest) => {
+      const key = `${rec.kind}/${rec.index}`;
+      const next = { ...latest[key], ...rec };
+      if (!rec.abandoned) delete next.abandoned;
+      latest[key] = next;
+    });
     if (rec) this.log(`resuming asset lock ${rec.txid} (${rec.duffs} duffs, ${rec.state})`);
     if (!rec) {
       assert(Number.isSafeInteger(duffs) && duffs >= 100000, 'lock at least 100000 duffs');
@@ -260,8 +266,10 @@ export class Session {
       const account = core.fundingAccount(this.seed, network);
       const built = core.buildAssetLock({ network, funding: account, utxoList: await core.verifiedUtxos(network, account.address), creditAddress: credit.address, duffs });
       rec = { kind, index: keyIndex, duffs, txid: built.txid, vout: 0, state: 'built', creditAddress: credit.address, rawtx: built.rawtx, fee: built.fee };
-      all[`${kind}/${keyIndex}`] = rec;
-      j.set(all);
+      j.update((latest) => {
+        assert(!latest[`${kind}/${keyIndex}`], `asset lock ${kind}/${keyIndex} was just created by another process; run the command again`);
+        latest[`${kind}/${keyIndex}`] = rec;
+      });
     }
     if (rec.state === 'built') {
       const known = await core.fetchTx(network, rec.txid);
@@ -271,25 +279,25 @@ export class Session {
         } catch (e) {
           if (!(await core.fetchTx(network, rec.txid)) && /missing|spent|conflict|rejected|input/i.test(e.message)) {
             rec.abandoned = e.message.slice(0, 300);
-            j.set(all);
+            save();
             throw new Error(`asset lock ${rec.txid} was rejected and set aside (${rec.abandoned}); run the command again to build a new one`);
           }
           throw new Error(`could not broadcast asset lock ${rec.txid} yet (${e.message.slice(0, 200)}); run the command again to retry it`);
         }
       }
       rec.state = 'broadcast';
-      j.set(all);
+      save();
       this.log(`asset lock ${rec.txid} broadcast (${rec.duffs} duffs, fee ${rec.fee})`);
     }
     if (rec.state !== 'chainlocked') {
       const sdk = await this.sdk(network);
       const lock = await core.waitForChainLock(network, sdk, rec.txid, { onWait: (m) => this.log(m) });
       Object.assign(rec, { coreChainLockedHeight: lock.coreChainLockedHeight, height: lock.height, state: 'chainlocked' });
-      j.set(all);
+      save();
     }
     const mark = (field, value) => {
       rec[field] = value;
-      j.set(all);
+      save();
     };
     return { ...rec, markProposed: (by) => mark('proposedBy', by), markUsed: (by) => mark('usedBy', by) };
   }
@@ -427,23 +435,24 @@ export class Session {
     const sdk = await this.sdk(p.body.network);
     const stHash = built.st.hash(false);
     let result;
-    try {
-      await sdk.stateTransitions.broadcastAndWait(built.st);
-      result = { ok: true, stHash };
-    } catch (e) {
-      const text = errorText(e);
-      result = SNAPSHOT.test(text) ? { ok: true, stHash, note: 'accepted; result returned as an affected-state snapshot' } : { ok: false, stHash, error: text };
+    if (intent.type === 'identity-create' && (await observed(sdk, intent, built.derived).catch(() => false))) {
+      result = { ok: true, stHash, note: 'the identity already exists; not broadcast again' };
+    } else {
+      try {
+        await sdk.stateTransitions.broadcastAndWait(built.st);
+        result = { ok: true, stHash };
+      } catch (e) {
+        const text = errorText(e);
+        result = SNAPSHOT.test(text) ? { ok: true, stHash, note: 'accepted; result returned as an affected-state snapshot' } : { ok: false, stHash, error: text };
+      }
     }
     if (result.ok) {
       result.confirmed = await confirmOnChain(sdk, intent, built.derived);
       if (result.confirmed && intent.type === 'identity-create') {
-        const j = this.assetLockJournal(p.body.network);
-        const all = j.get();
-        const rec = all[`registration/${intent.assetLockProof.keyIndex}`];
-        if (rec?.txid === intent.assetLockProof.txid) {
-          rec.usedBy = p.id;
-          j.set(all);
-        }
+        this.assetLockJournal(p.body.network).update((all) => {
+          const rec = all[`registration/${intent.assetLockProof.keyIndex}`];
+          if (rec?.txid === intent.assetLockProof.txid) rec.usedBy = p.id;
+        });
       }
       if (!result.confirmed) Object.assign(result, { ok: false, error: 'broadcast returned, but a proved read does not show the change' });
     }

@@ -14,8 +14,23 @@ test('two writers holding stale copies of a room both keep their messages', asyn
   openRoom(room);
   const first = loadRoom(room);
   const second = loadRoom(room);
-  addMessages(first, [hello(a.keys, room, 'a')]);
-  addMessages(second, [hello(b.keys, room, 'b')]);
-  assert.equal(loadRoom(room).messages.length, 2);
+  const ha = hello(a.keys, room, 'a');
+  const hb = hello(b.keys, room, 'b');
+  addMessages(first, [ha]);
+  addMessages(second, [hb]);
+  assert.deepEqual(loadRoom(room).messages.map((m) => m.from), [ha.from, hb.from]);
+  fs.rmSync(process.env.DTI_HOME, { recursive: true });
+});
+
+test('journal updates from stale readers keep each other\'s records', async () => {
+  process.env.DTI_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'dti-store-'));
+  const { journal } = await import(`../src/store.mjs?${Date.now()}`);
+  const one = journal('locks');
+  const two = journal('locks');
+  one.get();
+  two.get();
+  one.update((all) => (all['registration/0'] = { index: 0 }));
+  two.update((all) => (all['registration/1'] = { index: 1 }));
+  assert.deepEqual(Object.keys(journal('locks').get()).sort(), ['registration/0', 'registration/1']);
   fs.rmSync(process.env.DTI_HOME, { recursive: true });
 });
