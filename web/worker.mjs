@@ -42,7 +42,7 @@ export default {
     const response = new Response(asset.body, asset);
     for (const [k, v] of Object.entries(SECURITY)) response.headers.set(k, v);
     const hashed = /-[A-Z0-9]{8}\.js$/.test(url.pathname);
-    response.headers.set('cache-control', hashed ? 'public, max-age=31536000, immutable' : 'no-cache, no-transform');
+    response.headers.set('cache-control', !response.ok ? 'no-store' : hashed ? 'public, max-age=31536000, immutable' : 'no-cache, no-transform');
     return response;
   },
 };

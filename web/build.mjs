@@ -2,9 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 import * as esbuild from 'esbuild';
 
-const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const at = (...p) => path.join(root, ...p);
 const out = at('web', 'dist');
 const SHELL_SHA256 = '3c918d46cfa1df377ba4805cec5e5582e79de5a918c96fc6e32cb63a2851603a';

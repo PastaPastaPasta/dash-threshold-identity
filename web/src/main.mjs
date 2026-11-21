@@ -43,12 +43,18 @@ $('#form-unlock').onsubmit = async (e) => {
     error.hidden = false;
     return;
   }
+  attach(session);
+  try {
+    await import('../../src/ui/static/app.js');
+  } catch {
+    error.textContent = 'This page could not finish loading. Reload it and unlock again.';
+    error.hidden = false;
+    return;
+  }
   form.reset();
   $('#unlock-generated').hidden = true;
-  attach(session);
   $('#unlock').hidden = true;
   for (const el of document.querySelectorAll('[data-unlocked]')) el.hidden = false;
   selectTab('room');
   if (invite) document.querySelector('#form-join-room [name=room]').value = invite;
-  await import('../../src/ui/static/app.js');
 };

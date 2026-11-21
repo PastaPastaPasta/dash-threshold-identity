@@ -66,9 +66,9 @@ async function sync(page) {
 
 for (const [name, page] of Object.entries(pages)) {
   await page.goto(BASE);
-  await page.fill('#unlock-mnemonic', fs.readFileSync(`${SEEDS}/${name}.txt`, 'utf8').trim());
   if (name === 'alice') await shot(page, 'unlock__desktop');
   if (name === 'carol') await shot(page, 'unlock__phone');
+  await page.fill('#unlock-mnemonic', fs.readFileSync(`${SEEDS}/${name}.txt`, 'utf8').trim());
   await page.click('#form-unlock button:not([type])');
   await page.waitForSelector('#tab-room', { state: 'visible' });
   log(name, 'unlocked', await page.textContent('#me'));
