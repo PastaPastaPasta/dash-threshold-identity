@@ -5,7 +5,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { MNEMONICS, people, runCeremony } from './helpers.mjs';
 import { serveRelay } from '../src/relay/node-server.mjs';
+import { Session } from '../src/app.mjs';
 import { TestnetSession } from '../web/src/session.mjs';
+import { attach, api } from '../web/src/transport.mjs';
 import * as memory from '../src/storage/memory.mjs';
 
 test('the browser storage keeps JSON in memory and lists by directory', () => {
@@ -50,4 +52,18 @@ test('the hosted session refuses every mainnet path and pins its relay', async (
 
   s.data.relay = 'https://relay.example.org';
   assert.equal(s.requireRoom().relay, relay);
+
+  attach(s);
+  const viaRoutes = await api('POST', '/api/ceremony/propose', { network: 'mainnet', threshold: 2, label: 'routed', members: ps.map((p) => p.keys.authPub) });
+  assert.equal(s.ceremony(viaRoutes.cid).config.network, 'testnet');
+  assert.equal((await api('POST', '/api/room/join', { room, name: 'p1', relay: 'https://relay.example.org' })).relay, relay);
+  await assert.rejects(api('POST', '/api/ceremony/advance', { cid, accept: true }), refused);
+});
+
+test('the hosted session refuses mainnet proposals and identities found in a room', (t) => {
+  const s = new TestnetSession({ mnemonic: MNEMONICS[0], passphrase: 'TREZOR', relay: 'http://relay' });
+  t.mock.method(Session.prototype, 'findProposal', () => ({ s: {}, p: { id: 'a'.repeat(64), body: { network: 'mainnet' } } }));
+  t.mock.method(Session.prototype, 'identity', () => ({ identityId: 'X', network: 'mainnet' }));
+  assert.throws(() => s.findProposal('a'), /testnet only/);
+  assert.throws(() => s.identity('X'), /testnet only/);
 });

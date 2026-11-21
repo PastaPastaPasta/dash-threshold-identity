@@ -41,8 +41,8 @@ export default {
     const asset = await env.ASSETS.fetch(request);
     const response = new Response(asset.body, asset);
     for (const [k, v] of Object.entries(SECURITY)) response.headers.set(k, v);
-    const html = (response.headers.get('content-type') ?? '').startsWith('text/html');
-    response.headers.set('cache-control', html ? 'no-cache' : 'public, max-age=300');
+    const hashed = /-[A-Z0-9]{8}\.js$/.test(url.pathname);
+    response.headers.set('cache-control', hashed ? 'public, max-age=31536000, immutable' : 'no-cache, no-transform');
     return response;
   },
 };

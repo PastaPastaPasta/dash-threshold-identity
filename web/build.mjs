@@ -26,14 +26,20 @@ fs.copyFileSync(at('web', 'static', 'web.css'), path.join(out, 'web.css'));
 fs.copyFileSync(at('web', 'static', 'icon.svg'), path.join(out, 'icon.svg'));
 
 const replace = (s, from, to) => {
-  if (!s.includes(from)) throw new Error(`index.html no longer contains: ${from.slice(0, 80)}`);
+  if (!from || !s.includes(from)) throw new Error(`index.html no longer contains: ${from.slice(0, 80)}`);
   return s.split(from).join(to);
 };
 
 let html = fs.readFileSync(at('src', 'ui', 'static', 'index.html'), 'utf8');
-const header = html.slice(html.indexOf('  <header>'), html.indexOf('  </header>') + '  </header>\n'.length);
-const tabs = header.slice(header.indexOf('<nav id="tabs">'), header.indexOf('</nav>') + '</nav>'.length);
-html = replace(html, header, fs.readFileSync(at('web', 'static', 'header.html'), 'utf8').replace('<!--TABS-->', tabs.replace('<nav id="tabs">', '<nav id="tabs" slot="nav" aria-label="Multisig">')));
+const between = (s, start, end) => {
+  const a = s.indexOf(start);
+  const b = s.indexOf(end, a);
+  if (a < 0 || b < 0) throw new Error(`index.html no longer contains ${start} … ${end}`);
+  return s.slice(a, b + end.length);
+};
+const header = between(html, '  <header>', '  </header>\n');
+const tabs = between(header, '<nav id="tabs">', '</nav>');
+html = replace(html, header, fs.readFileSync(at('web', 'static', 'header.html'), 'utf8').replace('<!--TABS-->', tabs.replace('<nav id="tabs">', '<nav id="tabs" slot="nav" aria-label="Multisig" data-unlocked hidden>')));
 html = replace(html, '<title>Threshold Identity</title>', '<title>Multisig (Testnet) · dashhq</title>\n  <meta name="referrer" content="no-referrer">\n  <link rel="icon" href="icon.svg" type="image/svg+xml">');
 html = replace(html, '  <link rel="stylesheet" href="style.css">\n  <script type="module" src="app.js"></script>\n', [
   '  <script src="dashhq/dashhq-shell.js"></script>',
@@ -77,6 +83,7 @@ const result = await esbuild.build({
   platform: 'browser',
   target: 'es2022',
   outdir: out,
+  entryNames: '[name]-[hash]',
   minify: true,
   sourcemap: false,
   metafile: true,
@@ -86,5 +93,8 @@ const result = await esbuild.build({
   plugins: [shims],
   logLevel: 'warning',
 });
+const entry = Object.entries(result.metafile.outputs).find(([, o]) => o.entryPoint)?.[0];
+if (!entry) throw new Error('no entry chunk');
+fs.writeFileSync(path.join(out, 'index.html'), replace(fs.readFileSync(path.join(out, 'index.html'), 'utf8'), 'src="main.js"', `src="${path.basename(entry)}"`));
 const sizes = Object.entries(result.metafile.outputs).map(([f, o]) => `${path.relative(out, f)} ${(o.bytes / 1e6).toFixed(2)} MB`);
 console.log(sizes.join('\n'));

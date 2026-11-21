@@ -3,3 +3,4 @@ node_modules/
 *.tmp.mjs
 .dev.vars
 web/dist/
+web-e2e-out/

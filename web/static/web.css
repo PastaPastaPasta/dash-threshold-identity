@@ -1,3 +1,4 @@
+[hidden] { display: none !important; }
 :root, :root[data-theme] {
   --bg: var(--dh-page);
   --card: var(--dh-surface);
@@ -40,3 +41,11 @@ td.mono { min-width: 24ch; }
   .card { padding: 14px; }
   .fp { letter-spacing: 0; }
 }
+.card, dialog { overflow-wrap: anywhere; }
+.summary li { overflow-wrap: anywhere; }
+dialog { max-height: calc(100dvh - 32px); overflow: auto; }
+@media (max-width: 600px) {
+  dialog { padding: 14px; }
+  dialog pre { max-height: 300px; }
+}
+.masked { -webkit-text-security: disc; }

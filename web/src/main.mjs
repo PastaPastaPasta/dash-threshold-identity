@@ -48,6 +48,7 @@ $('#form-unlock').onsubmit = async (e) => {
   attach(session);
   $('#unlock').hidden = true;
   for (const el of document.querySelectorAll('[data-unlocked]')) el.hidden = false;
+  selectTab('room');
   if (invite) document.querySelector('#form-join-room [name=room]').value = invite;
   await import('../../src/ui/static/app.js');
 };
