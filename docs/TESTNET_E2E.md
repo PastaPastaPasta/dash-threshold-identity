@@ -65,6 +65,20 @@ The later commits change the completion message and the relay's membership rules
 - Contract create or update for a one-type contract: about 12.0e9 credits each, since every update pays the registration fee again.
 - Documents, transfers, withdrawals and identity updates: 0.01–0.1e9 credits each.
 
+## Hosted testnet app (2026-11-21)
+
+[`scripts/web-e2e.mjs`](../scripts/web-e2e.mjs) drove https://new-multisig.dashhq.org (the build in [HOSTED.md](HOSTED.md)) with three separate Chromium profiles, one per member, each holding only its own seed phrase in page memory. Alice and Bob used 1440×900 windows; Carol used a 390×844 phone viewport. All messages went through the relay on the same origin.
+
+| Step | Who | Result |
+|---|---|---|
+| Room `030e24c1…`, joins | alice creates; bob, carol join | 3 members, fingerprints shown |
+| Key ceremony `08b19842…`, 2-of-3, four keys | alice proposes; all accept and run the DKG | complete in about 10 s |
+| Asset lock, 0.5 tDASH from alice's seed-derived address | alice's page builds, signs and broadcasts it through Insight | tx `5e872c36…099a`, chain-locked at 1595997 |
+| Identity create, four proofs of possession | bob and carol review and sign; alice combines, signs the asset-lock proof and broadcasts | identity `9EFgF9HEz73m3TA57MRXwtBDBM5htfTKBj1tRbWFwrVm` |
+| Credit transfer, 1e8 credits to `GSv2XVR4…EQ6` | bob proposes; carol and alice sign with the TRANSFER key; carol broadcasts | executed, nonce 1 |
+
+The page's proved read shows the four on-chain keys equal to the group keys. A separate Node process confirmed the identity's four BLS keys, nonce 1 and a balance 103,516,000 credits lower after the transfer (1e8 plus the fee). No page errors and no CSP violations from the app occurred; the one blocked script was Cloudflare's zone-injected analytics beacon, which the Worker now prevents with `Cache-Control: no-transform`.
+
 ## Earlier runs
 
 The same steps ran three earlier times that day on earlier commits of this branch. Each run turned up fixes, which are now in this PR:

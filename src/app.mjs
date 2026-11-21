@@ -9,7 +9,7 @@ import { connect, retry, errorText, sdkModule, protocolVersionOf } from './platf
 import { makeProposalBody, reviewProposal, signedTransition } from './proposals.mjs';
 import { describeIntent } from './platform/transitions.mjs';
 import * as core from './platform/core.mjs';
-import { sha256hex, hex, assert, toPlain, getOwn, sleep } from './util.mjs';
+import { sha256hex, hex, assert, toPlain, getOwn, sleep, base64ToHex } from './util.mjs';
 
 const SNAPSHOT = /ExecutionNotProved|affected.?state/i;
 
@@ -22,7 +22,7 @@ function safeDescribe(intent) {
 }
 
 const masked = (n) => (n === undefined || n === null ? -1n : BigInt(n) & 0xffffffffffn);
-const keyHex = (k) => Buffer.from(k.toJSON().data, 'base64').toString('hex');
+const keyHex = (k) => base64ToHex(k.toJSON().data);
 const intentKey = (cid, slot, k) => ({ cid, slot, keyId: k.keyId, purpose: k.purpose, securityLevel: k.securityLevel, publicKey: k.groupPublicKey });
 
 async function observed(sdk, intent, derived) {

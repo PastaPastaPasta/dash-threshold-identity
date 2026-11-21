@@ -10,7 +10,7 @@ Everything is derived from each member's **BIP39 seed phrase**: the member's mes
 - `dti ui`: the same features in a local web UI, served on 127.0.0.1 only.
 - `relay/`: a small Cloudflare Worker that acts as a mailbox for the group's signed messages. It is optional and untrusted: rooms also work by passing JSON bundles around (`dti room export` / `import`), and `dti relay serve` runs the same mailbox anywhere with Node.
 
-Proven end to end on testnet; see [docs/TESTNET_E2E.md](docs/TESTNET_E2E.md). Platform support and mainnet readiness are reviewed in [docs/PLATFORM_REVIEW.md](docs/PLATFORM_REVIEW.md). The protocol is specified in [docs/PROTOCOL.md](docs/PROTOCOL.md).
+Proven end to end on testnet; see [docs/TESTNET_E2E.md](docs/TESTNET_E2E.md). The hosted testnet app is described in [docs/HOSTED.md](docs/HOSTED.md). Platform support and mainnet readiness are reviewed in [docs/PLATFORM_REVIEW.md](docs/PLATFORM_REVIEW.md). The protocol is specified in [docs/PROTOCOL.md](docs/PROTOCOL.md).
 
 ## Install
 
@@ -77,6 +77,10 @@ dti ui --mnemonic-file seed.txt     # prints http://127.0.0.1:8770/#token=...
 ```
 
 It covers rooms and bundles, fingerprints, ceremonies, funding, proposals with the decoded transition, signing and broadcasting. It binds to 127.0.0.1, checks the Host header, and requires the per-run token in the printed URL. The seed phrase stays in the `dti` process.
+
+### The hosted testnet app
+
+`web/` builds the same UI into a page that runs entirely in the browser, with the relay on the same origin. It is locked to testnet, keeps the seed phrase in the tab's memory only, and is deployed at https://new-multisig.dashhq.org. See [docs/HOSTED.md](docs/HOSTED.md) for how it reuses `src/`, the testnet lock and the risks of serving it from a public domain.
 
 ## The relay
 

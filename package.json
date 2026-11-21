@@ -4,11 +4,18 @@
   "description": "Threshold (t-of-n) BLS keys for Dash Platform identities: remote DKG ceremonies, transition proposals, threshold signing.",
   "type": "module",
   "license": "MIT",
-  "engines": { "node": ">=22" },
-  "bin": { "dti": "bin/dti.mjs" },
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "dti": "bin/dti.mjs"
+  },
   "scripts": {
     "test": "node --test test/*.test.mjs",
-    "relay:dev": "wrangler dev --config relay/wrangler.toml"
+    "relay:dev": "wrangler dev --config relay/wrangler.toml",
+    "web:build": "node web/build.mjs",
+    "web:dev": "npm run web:build && wrangler dev --config web/wrangler.toml",
+    "web:deploy": "npm run web:build && wrangler deploy --config web/wrangler.toml"
   },
   "dependencies": {
     "@dashevo/dashcore-lib": "0.26.1",
@@ -20,7 +27,19 @@
     "@scure/bip39": "2.4.0"
   },
   "devDependencies": {
-    "wrangler": "4.165.0",
-    "@types/node": "22.19.1"
+    "@types/node": "22.19.1",
+    "assert": "2.1.0",
+    "buffer": "6.0.3",
+    "esbuild": "0.28.2",
+    "events": "3.3.0",
+    "url": "0.11.4",
+    "util": "0.12.5",
+    "wrangler": "4.165.0"
+  },
+  "imports": {
+    "#storage": {
+      "browser": "./src/storage/memory.mjs",
+      "default": "./src/storage/node.mjs"
+    }
   }
 }

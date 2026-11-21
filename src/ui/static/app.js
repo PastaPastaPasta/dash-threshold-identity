@@ -1,6 +1,4 @@
-const token = new URLSearchParams(location.hash.slice(1)).get('token') ?? sessionStorage.getItem('dti-token');
-if (token) sessionStorage.setItem('dti-token', token);
-history.replaceState(null, '', location.pathname);
+import { api } from './transport.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -18,14 +16,6 @@ function setOptions(el, html) {
   const before = el.value;
   el.innerHTML = html;
   if (before && [...el.options].some((o) => o.value === before)) el.value = before;
-}
-
-async function api(method, path, body) {
-  const url = method === 'GET' && body ? `${path}?${new URLSearchParams(body)}` : path;
-  const res = await fetch(url, { method, headers: { 'content-type': 'application/json', 'x-dti-token': token ?? '' }, body: method === 'GET' ? undefined : JSON.stringify(body ?? {}) });
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.error ?? res.statusText);
-  return json;
 }
 
 function flash(message, bad = false) {
@@ -232,6 +222,5 @@ $('#form-propose').onsubmit = (e) => {
   act('Propose', () => api('POST', '/api/propose', { kind, args }));
 };
 
-if (!token) flash('Open the URL that `dti ui` printed; it carries this session\'s token.', true);
 refresh();
 setInterval(() => { if (!busy && !document.querySelector('dialog[open]')) api('POST', '/api/sync').then(refresh).catch(() => {}); }, 8000);

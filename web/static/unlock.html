@@ -1,0 +1,23 @@
+  <main id="unlock" class="unlock">
+    <div class="card">
+      <h1>Multisig identities on Dash Platform</h1>
+      <p class="lede">Run a Platform identity as a t-of-n group. The members create its keys together in a key ceremony, and any t of them can sign. Nobody holds the identity's keys, not even this site.</p>
+      <form id="form-unlock" class="stack" autocomplete="off">
+        <label for="unlock-mnemonic">Your seed phrase (12 or 24 words)</label>
+        <textarea id="unlock-mnemonic" name="mnemonic" rows="3" class="mono" spellcheck="false" autocapitalize="off" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore required></textarea>
+        <p id="unlock-generated" class="note" hidden>A new phrase was generated in this tab. Write it down before you continue: you need it to come back to your group, and this page will forget it.</p>
+        <details><summary>BIP39 passphrase (optional)</summary><input name="passphrase" type="text" class="masked" autocomplete="off" spellcheck="false" autocapitalize="off" data-1p-ignore data-lpignore="true" data-bwignore aria-label="BIP39 passphrase"></details>
+        <p id="unlock-error" class="flash bad" hidden></p>
+        <div class="row"><button>Unlock</button><button type="button" class="secondary" id="unlock-generate">Generate a new testnet phrase</button></div>
+      </form>
+    </div>
+    <div class="card">
+      <h2>How your phrase is used</h2>
+      <ul class="facts">
+        <li>Your member keys, your key-ceremony secrets and your testnet funding address are all derived from it, in this tab.</li>
+        <li>The relay only carries signed messages between members. Key shares travel encrypted to their recipient. The phrase and your shares never leave the tab.</li>
+        <li>Nothing is saved. To continue later, unlock with the same phrase and join the same room; your share is rebuilt from the room's messages.</li>
+        <li>Use a phrase made for this group, not one that holds funds in a wallet.</li>
+      </ul>
+    </div>
+  </main>
