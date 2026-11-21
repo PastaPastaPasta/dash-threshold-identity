@@ -1,0 +1,26 @@
+{
+  "name": "dash-threshold-identity",
+  "version": "0.1.0",
+  "description": "Threshold (t-of-n) BLS keys for Dash Platform identities: remote DKG ceremonies, transition proposals, threshold signing.",
+  "type": "module",
+  "license": "MIT",
+  "engines": { "node": ">=22" },
+  "bin": { "dti": "bin/dti.mjs" },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "relay:dev": "wrangler dev --config relay/wrangler.toml"
+  },
+  "dependencies": {
+    "@dashevo/dashcore-lib": "0.26.1",
+    "@dashevo/evo-sdk": "5.0.3",
+    "@noble/ciphers": "2.4.0",
+    "@noble/curves": "2.4.0",
+    "@noble/hashes": "2.4.0",
+    "@scure/bip32": "2.4.0",
+    "@scure/bip39": "2.4.0"
+  },
+  "devDependencies": {
+    "wrangler": "4.165.0",
+    "@types/node": "22.19.1"
+  }
+}
