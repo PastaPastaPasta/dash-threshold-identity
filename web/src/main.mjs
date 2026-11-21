@@ -55,6 +55,5 @@ $('#form-unlock').onsubmit = async (e) => {
   $('#unlock-generated').hidden = true;
   $('#unlock').hidden = true;
   for (const el of document.querySelectorAll('[data-unlocked]')) el.hidden = false;
-  selectTab('room');
-  if (invite) document.querySelector('#form-join-room [name=room]').value = invite;
+  if (invite) $('#form-join-room [name=room]').value = invite;
 };

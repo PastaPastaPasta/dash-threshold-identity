@@ -31,7 +31,8 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname.startsWith('/v1/')) {
-      const response = new Response(...(await relay.fetch(request, env).then((r) => [r.body, r])));
+      const upstream = await relay.fetch(request, env);
+      const response = new Response(upstream.body, upstream);
       response.headers.set('x-content-type-options', 'nosniff');
       response.headers.set('content-security-policy', "default-src 'none'; frame-ancestors 'none'");
       response.headers.set('cache-control', 'no-store');

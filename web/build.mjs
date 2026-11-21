@@ -61,7 +61,6 @@ html = replace(html, '  <main>', `${fs.readFileSync(at('web', 'static', 'unlock.
 html = replace(html, '<button id="fund-check">Show address and balance</button>', '<button id="fund-check">Show address and balance</button>\n          <a href="https://faucet.dashhq.org/?network=testnet" target="_blank" rel="noopener noreferrer">Get testnet DASH ↗</a>');
 html = replace(html, '</body>', `${fs.readFileSync(at('web', 'static', 'footer.html'), 'utf8')}</body>`);
 if (/<option[^>]*>\s*mainnet|value="mainnet"/i.test(html)) throw new Error('the hosted page must not offer mainnet');
-fs.writeFileSync(path.join(out, 'index.html'), html);
 
 const require = createRequire(import.meta.url);
 const shims = {
@@ -96,6 +95,6 @@ const result = await esbuild.build({
 });
 const entry = Object.entries(result.metafile.outputs).find(([, o]) => o.entryPoint)?.[0];
 if (!entry) throw new Error('no entry chunk');
-fs.writeFileSync(path.join(out, 'index.html'), replace(fs.readFileSync(path.join(out, 'index.html'), 'utf8'), 'src="main.js"', `src="${path.basename(entry)}"`));
+fs.writeFileSync(path.join(out, 'index.html'), replace(html, 'src="main.js"', `src="${path.basename(entry)}"`));
 const sizes = Object.entries(result.metafile.outputs).map(([f, o]) => `${path.relative(out, f)} ${(o.bytes / 1e6).toFixed(2)} MB`);
 console.log(sizes.join('\n'));
