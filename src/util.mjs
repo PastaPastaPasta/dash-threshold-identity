@@ -3,6 +3,8 @@ import { bytesToHex, hexToBytes, utf8ToBytes, concatBytes } from '@noble/hashes/
 
 export { bytesToHex as hex, hexToBytes as unhex, utf8ToBytes as utf8 };
 
+export const base64ToHex = (b64) => bytesToHex(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)));
+
 export const sha256hex = (bytes) => bytesToHex(sha256(typeof bytes === 'string' ? utf8ToBytes(bytes) : bytes));
 
 export function canonical(value) {

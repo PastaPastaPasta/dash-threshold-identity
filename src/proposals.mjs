@@ -1,6 +1,6 @@
 import { buildTransition, decodeTransition, describeIntent, requirementsFor, expectedLevels, assembleSigned, validateIntent, keysAdded } from './platform/transitions.mjs';
 import { retry, errorText } from './platform/sdk.mjs';
-import { canonical, assert, getOwn } from './util.mjs';
+import { canonical, assert, getOwn, base64ToHex } from './util.mjs';
 import { requirementKey } from './state.mjs';
 import { participantIndex } from './ceremony.mjs';
 import { addressToPubKeyHash } from './platform/core.mjs';
@@ -120,7 +120,7 @@ async function chainChecks(sdk, state, intent) {
   const group = slotInfo(state, intent.signer);
   if (!signerKey) problems.push(`identity has no key ${intent.signer.keyId}`);
   else {
-    if (Buffer.from(signerKey.data, 'base64').toString('hex') !== group?.groupPublicKey) problems.push(`on-chain key ${intent.signer.keyId} is not the ${intent.signer.slot} group key`);
+    if (base64ToHex(signerKey.data) !== group?.groupPublicKey) problems.push(`on-chain key ${intent.signer.keyId} is not the ${intent.signer.slot} group key`);
     if (signerKey.disabledAt) problems.push(`on-chain key ${intent.signer.keyId} is disabled`);
   }
   if (['identity-update', 'contract-create', 'credit-transfer', 'credit-withdrawal'].includes(intent.type)) {

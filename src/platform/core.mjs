@@ -13,7 +13,7 @@ const CORE_NET = { testnet: 'testnet', mainnet: 'livenet' };
 const FEE_PER_KB = 1000;
 const MAX_FEE = 100000;
 
-const insight = (network) => process.env.DTI_INSIGHT_URL || INSIGHT[network];
+const insight = (network) => globalThis.process?.env?.DTI_INSIGHT_URL || INSIGHT[network];
 
 async function getJson(url, init = {}) {
   const response = await fetch(url, { ...init, signal: AbortSignal.timeout(30000) });
