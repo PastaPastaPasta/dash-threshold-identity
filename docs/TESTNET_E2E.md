@@ -89,6 +89,7 @@ The three phrases used above were exposed in an early screenshot, so they are tr
 
 The identity keeps about 0.75e9 credits, below what a further withdrawal and its fee need.
 
+## Earlier runs
 
 The same steps ran three earlier times that day on earlier commits of this branch. Each run turned up fixes, which are now in this PR:
 

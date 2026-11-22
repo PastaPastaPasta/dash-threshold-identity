@@ -44,7 +44,7 @@ An optional BIP39 passphrase comes from DTI_PASSPHRASE or --passphrase-file.
   dti reject PROPOSAL --reason TEXT
   dti execute PROPOSAL                         combine the shares and broadcast
 
-  dti relay serve [--port 8787] [--host 127.0.0.1] [--dir DIR]
+  dti relay serve [--port 8787] [--host 127.0.0.1] [--dir DIR] [--limits]
   dti ui [--port 8770]                         local web UI (served on 127.0.0.1 only)
 
 Options: --room ROOM (or DTI_ROOM), --relay URL, --json`;
@@ -58,7 +58,7 @@ const OPTIONS = {
   signer: { type: 'string' }, to: { type: 'string' }, 'to-address': { type: 'string' }, amount: { type: 'string' },
   add: { type: 'string' }, disable: { type: 'string' }, 'fee-increase': { type: 'string' }, note: { type: 'string' },
   reason: { type: 'string' }, port: { type: 'string' }, host: { type: 'string' }, dir: { type: 'string' },
-  'confirm-mainnet': { type: 'boolean' }, 'accept-new-keys': { type: 'boolean' }, 'mnemonic-file': { type: 'string' }, 'passphrase-file': { type: 'string' }, offline: { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
+  'confirm-mainnet': { type: 'boolean' }, 'accept-new-keys': { type: 'boolean' }, 'mnemonic-file': { type: 'string' }, 'passphrase-file': { type: 'string' }, offline: { type: 'boolean' }, limits: { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
 };
 
 const print = (v, asJson) => console.log(asJson || typeof v !== 'string' ? JSON.stringify(v, jsonReplacer, 2) : v);
@@ -195,8 +195,8 @@ export async function main(argv) {
       if (sub === 'serve') {
         const port = Number(v.port ?? 8787);
         const host = v.host ?? '127.0.0.1';
-        await serveRelay({ port, host, dir: v.dir ?? null });
-        console.error(`relay listening on http://${host}:${port}${v.dir ? ` (storing in ${v.dir})` : ' (in memory)'}`);
+        await serveRelay({ port, host, dir: v.dir ?? null, limits: Boolean(v.limits) });
+        console.error(`relay listening on http://${host}:${port}${v.dir ? ` (storing in ${v.dir})` : ' (in memory)'}${v.limits ? ', with per-address limits' : ''}`);
         return new Promise(() => {});
       }
       break;

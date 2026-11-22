@@ -1,5 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
-import { handle, handleRoom, json, parseRoute, admit, frontDoor, windowLimiter, CLIENT_HEADER } from '../src/relay/core.mjs';
+import { handle, handleRoom, json, parseRoute, admit, frontDoor, windowLimiter, clientBucket, CORS, CLIENT_HEADER } from '../src/relay/core.mjs';
 
 export class Limits extends DurableObject {
   constructor(ctx, env) {
@@ -80,9 +80,10 @@ export class Room extends DurableObject {
 export default {
   async fetch(request, env) {
     try {
+      if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
       const limiter = durableLimiter(env);
       const forwarded = new Request(request);
-      forwarded.headers.set(CLIENT_HEADER, request.headers.get('cf-connecting-ip') ?? '');
+      forwarded.headers.set(CLIENT_HEADER, clientBucket(request.headers.get('cf-connecting-ip')));
       const room = parseRoute(request.url);
       if (!room) return await handle(forwarded, async () => null, limiter);
       const refused = await frontDoor(forwarded, limiter);

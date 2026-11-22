@@ -1,7 +1,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
-import { handle, memoryStore, admit, windowLimiter, CLIENT_HEADER, MAX_MESSAGE_BYTES } from './core.mjs';
+import { handle, memoryStore, admit, windowLimiter, clientBucket, CLIENT_HEADER, MAX_MESSAGE_BYTES } from './core.mjs';
 
 export function fileStore(dir) {
   const mem = memoryStore();
@@ -75,7 +75,7 @@ export async function toRequest(req, origin, limit = MAX_MESSAGE_BYTES + 1024) {
   if (size > limit) throw Object.assign(new Error('message too large'), { status: 413 });
   const body = chunks.length ? Buffer.concat(chunks) : undefined;
   const headers = new Headers(Object.entries(req.headers).filter(([, v]) => typeof v === 'string'));
-  headers.set(CLIENT_HEADER, req.socket.remoteAddress ?? '');
+  headers.set(CLIENT_HEADER, clientBucket(req.socket.remoteAddress));
   return new Request(new URL(req.url, origin), { method: req.method, headers, body: ['GET', 'HEAD'].includes(req.method) ? undefined : body });
 }
 
@@ -84,7 +84,7 @@ export async function sendResponse(res, response) {
   res.end(Buffer.from(await response.arrayBuffer()));
 }
 
-export function serveRelay({ port = 8787, host = '127.0.0.1', dir = null, limiter = windowLimiter() } = {}) {
+export function serveRelay({ port = 8787, host = '127.0.0.1', dir = null, limits = false, limiter = limits ? windowLimiter() : null } = {}) {
   const store = dir ? fileStore(dir) : memoryStore();
   const server = http.createServer(async (req, res) => {
     try {

@@ -4,9 +4,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { people } from './helpers.mjs';
-import { admit, handle, memoryStore, windowLimiter, CLIENT_HEADER, MAX_HELLOS_PER_CLIENT } from '../src/relay/core.mjs';
+import { admit, handle, memoryStore, windowLimiter, clientBucket, CLIENT_HEADER, MAX_HELLOS_PER_CLIENT } from '../src/relay/core.mjs';
 import { serveRelay } from '../src/relay/node-server.mjs';
 import { hello } from '../src/participant.mjs';
+import { participantKeys } from '../src/derive.mjs';
 import { sealEnvelope } from '../src/envelope.mjs';
 
 const ps = people(2);
@@ -127,23 +128,50 @@ test('the relay answers 429 once one address posts or reads too often', async ()
   assert.equal((await read()).status, 429);
 });
 
-test('one address can take only a few join slots in a room, and open only a few rooms', async () => {
+test('one network can take only a few join slots in a room, and open only a few rooms', async () => {
   const store = memoryStore();
-  const limiter = windowLimiter({ reads: { limit: 99, periodMs: 60000 }, posts: { limit: 99, periodMs: 60000 }, rooms: { limit: 1, periodMs: 60000 } });
+  const limiter = windowLimiter({ reads: { limit: 999, periodMs: 60000 }, posts: { limit: 999, periodMs: 60000 }, rooms: { limit: 1, periodMs: 60000 } });
   const room = 'limit-room-slots';
-  const joiners = people(6);
+  const keys = Array.from({ length: MAX_HELLOS_PER_CLIENT + 2 }, (_, i) => participantKeys(new Uint8Array(32).fill(i + 1)));
   const statuses = [];
-  for (const p of joiners.slice(0, MAX_HELLOS_PER_CLIENT + 1)) statuses.push((await post(store, limiter, '203.0.113.7', room, hello(p.keys, room, 'x'))).status);
-  assert.deepEqual(statuses, [...Array(MAX_HELLOS_PER_CLIENT).fill(200), 429]);
-  assert.equal((await post(store, limiter, '203.0.113.8', room, hello(joiners[5].keys, room, 'y'))).status, 200);
+  for (const k of keys.slice(0, MAX_HELLOS_PER_CLIENT + 1)) statuses.push((await post(store, limiter, '203.0.113.7', room, hello(k, room, 'x'))).status);
+  assert.deepEqual(statuses, [...Array(MAX_HELLOS_PER_CLIENT).fill(200), 403]);
+  assert.equal((await post(store, limiter, '203.0.113.8', room, hello(keys.at(-1), room, 'y'))).status, 200);
   const other = 'limit-room-second';
-  assert.equal((await post(store, limiter, '203.0.113.7', other, hello(joiners[0].keys, other, 'z'))).status, 429);
-  assert.equal((await post(store, limiter, '203.0.113.9', other, hello(joiners[0].keys, other, 'z'))).status, 200);
+  assert.equal((await post(store, limiter, '203.0.113.7', other, hello(keys[0], other, 'z'))).status, 429);
+  assert.equal((await post(store, limiter, '203.0.113.9', other, hello(keys[0], other, 'z'))).status, 200);
+});
+
+test('a slow new-room check cannot let two first joins both own a room', async () => {
+  const store = memoryStore();
+  let release;
+  const gate = new Promise((r) => (release = r));
+  const limiter = { allow: async (kind) => { if (kind === 'rooms') await gate; return true; } };
+  const room = 'limit-room-race';
+  const [a, b] = people(2);
+  const first = post(store, limiter, '198.51.100.20', room, hello(a.keys, room, 'a'));
+  const second = post(store, limiter, '198.51.100.21', room, hello(b.keys, room, 'b'));
+  release();
+  await Promise.all([first, second]);
+  const firstSeq = (await store.list(room, 0, 10))[0];
+  assert.equal((await store.policy(room)).owner, JSON.parse(firstSeq.body).from);
+});
+
+test('addresses are bucketed per IPv4 address and per IPv6 /64', () => {
+  assert.equal(clientBucket('198.51.100.7'), '198.51.100.7');
+  assert.equal(clientBucket('::ffff:198.51.100.7'), '198.51.100.7');
+  assert.equal(clientBucket('2001:db8:1:2:aaaa::1'), '2001:0db8:0001:0002::/64');
+  assert.equal(clientBucket('2001:db8:1:2:ffff:ffff:ffff:ffff'), '2001:0db8:0001:0002::/64');
+  assert.equal(clientBucket('2001:db8::1'), '2001:0db8:0000:0000::/64');
+  assert.equal(clientBucket('::1'), '0000:0000:0000:0000::/64');
+  assert.equal(clientBucket('fe80::1%eth0'), 'fe80:0000:0000:0000::/64');
+  assert.equal(clientBucket(''), 'unknown');
+  assert.equal(clientBucket(null), 'unknown');
 });
 
 test('the Node relay uses the socket address, not a client-supplied header', async (t) => {
   const seen = [];
-  const server = await serveRelay({ port: 0, limiter: { allow: async (kind, client) => { seen.push(client); return true; } } });
+  const server = await serveRelay({ port: 0, limits: true, limiter: { allow: async (kind, client) => { seen.push(client); return true; } } });
   t.after(() => server.close());
   await fetch(`http://127.0.0.1:${server.address().port}/v1/rooms/${ROOM}/messages?after=0`, { headers: { [CLIENT_HEADER]: '192.0.2.1' } });
   assert.deepEqual(seen, ['127.0.0.1']);
