@@ -26,5 +26,7 @@ jobs:
         run: npx wrangler deploy --config relay/wrangler.toml --dry-run --outdir dist
       - name: Build the hosted testnet web app
         run: npm run web:build
+      - name: Check the README publishes this commit's bundle hash
+        run: node web/verify.mjs --readme
       - name: Build the web Worker
         run: npx wrangler deploy --config web/wrangler.toml --dry-run --outdir dist-web

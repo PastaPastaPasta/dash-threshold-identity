@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import * as esbuild from 'esbuild';
+import { bundleManifest, sha256, MANIFEST } from './manifest.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const at = (...p) => path.join(root, ...p);
@@ -14,7 +14,7 @@ fs.rmSync(out, { recursive: true, force: true });
 fs.mkdirSync(path.join(out, 'dashhq', 'fonts'), { recursive: true });
 
 const shell = fs.readFileSync(at('web', 'vendor', 'dashhq', 'dashhq-shell.js'));
-if (createHash('sha256').update(shell).digest('hex') !== SHELL_SHA256) throw new Error('vendored dashhq-shell.js does not match its pinned hash');
+if (sha256(shell) !== SHELL_SHA256) throw new Error('vendored dashhq-shell.js does not match its pinned hash');
 const REGISTRY_ANCHOR = "    yappr:    { name: 'Yappr',";
 const REGISTRY_ENTRY = "    multisig: { name: 'Multisig',      url: 'https://new-multisig.dashhq.org', door: 'platform', only: 'Testnet' },\n";
 if (!shell.includes(REGISTRY_ANCHOR)) throw new Error('dashhq-shell.js registry anchor moved');
@@ -95,6 +95,13 @@ const result = await esbuild.build({
 });
 const entry = Object.entries(result.metafile.outputs).find(([, o]) => o.entryPoint)?.[0];
 if (!entry) throw new Error('no entry chunk');
-fs.writeFileSync(path.join(out, 'index.html'), replace(html, 'src="main.js"', `src="${path.basename(entry)}"`));
+html = replace(html, 'src="main.js"', `src="${path.basename(entry)}"`);
+const manifest = bundleManifest(out);
+fs.writeFileSync(path.join(out, MANIFEST), manifest);
+const bundleHash = sha256(manifest);
+html = replace(html, '__BUNDLE_HASH_SHORT__', bundleHash.slice(0, 12));
+html = replace(html, '__BUNDLE_HASH__', bundleHash);
+fs.writeFileSync(path.join(out, 'index.html'), html);
 const sizes = Object.entries(result.metafile.outputs).map(([f, o]) => `${path.relative(out, f)} ${(o.bytes / 1e6).toFixed(2)} MB`);
 console.log(sizes.join('\n'));
+console.log(`bundle sha256 ${bundleHash}\nindex.html sha256 ${sha256(html)}`);
