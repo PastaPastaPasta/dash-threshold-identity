@@ -82,7 +82,7 @@ export function fileStore(dir) {
   };
 }
 
-export async function toRequest(req, origin, limit = MAX_MESSAGE_BYTES + 1024) {
+export async function toRequest(req, origin, limit = MAX_MESSAGE_BYTES + 1024, client = null) {
   const chunks = [];
   let size = 0;
   await new Promise((resolve, reject) => {
@@ -96,7 +96,8 @@ export async function toRequest(req, origin, limit = MAX_MESSAGE_BYTES + 1024) {
   if (size > limit) throw Object.assign(new Error('message too large'), { status: 413 });
   const body = chunks.length ? Buffer.concat(chunks) : undefined;
   const headers = new Headers(Object.entries(req.headers).filter(([, v]) => typeof v === 'string'));
-  headers.set(CLIENT_HEADER, clientBucket(req.socket.remoteAddress));
+  headers.delete(CLIENT_HEADER);
+  if (client) headers.set(CLIENT_HEADER, client);
   return new Request(new URL(req.url, origin), { method: req.method, headers, body: ['GET', 'HEAD'].includes(req.method) ? undefined : body });
 }
 
@@ -109,7 +110,7 @@ export function serveRelay({ port = 8787, host = '127.0.0.1', dir = null, limits
   const store = dir ? fileStore(dir) : memoryStore();
   const server = http.createServer(async (req, res) => {
     try {
-      await sendResponse(res, await handle(await toRequest(req, `http://${host}:${port}`), async () => store, limiter));
+      await sendResponse(res, await handle(await toRequest(req, `http://${host}:${port}`, undefined, limiter ? clientBucket(req.socket.remoteAddress) : null), async () => store, limiter));
     } catch (e) {
       res.writeHead(e.status ?? 500, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ error: e.message }));

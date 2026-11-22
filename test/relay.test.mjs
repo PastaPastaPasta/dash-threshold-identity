@@ -197,3 +197,15 @@ test('the Node relay keeps join counts on disk across restarts', async (t) => {
   assert.equal((await send(server, keys.at(-1))).status, 403);
   server.close();
 });
+
+test('without --limits the Node relay applies no per-address limits, even to a spoofed header', async (t) => {
+  const server = await serveRelay({ port: 0 });
+  t.after(() => server.close());
+  const room = 'no-limits-room';
+  const statuses = [];
+  for (let i = 0; i <= MAX_HELLOS_PER_CLIENT; i++) {
+    const k = participantKeys(new Uint8Array(32).fill(i + 90));
+    statuses.push((await fetch(`http://127.0.0.1:${server.address().port}/v1/rooms/${room}/messages`, { method: 'POST', headers: { [CLIENT_HEADER]: '192.0.2.1' }, body: JSON.stringify(hello(k, room, 'x')) })).status);
+  }
+  assert.deepEqual(statuses, Array(MAX_HELLOS_PER_CLIENT + 1).fill(200));
+});
