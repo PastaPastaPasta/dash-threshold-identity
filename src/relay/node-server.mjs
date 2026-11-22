@@ -1,7 +1,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
-import { handle, memoryStore, admit, MAX_MESSAGE_BYTES } from './core.mjs';
+import { handle, memoryStore, admit, windowLimiter, CLIENT_HEADER, MAX_MESSAGE_BYTES } from './core.mjs';
 
 export function fileStore(dir) {
   const mem = memoryStore();
@@ -50,6 +50,8 @@ export function fileStore(dir) {
       return seq;
     },
     async countFrom(room, from) { load(room); return mem.countFrom(room, from); },
+    hellosFrom: mem.hellosFrom,
+    addHello: mem.addHello,
     async exists(room, id) { load(room); return mem.exists(room, id); },
     async policy(room) { load(room); return mem.policy(room); },
     async setPolicy(room, policy) { load(room); return mem.setPolicy(room, policy); },
@@ -72,7 +74,9 @@ export async function toRequest(req, origin, limit = MAX_MESSAGE_BYTES + 1024) {
   });
   if (size > limit) throw Object.assign(new Error('message too large'), { status: 413 });
   const body = chunks.length ? Buffer.concat(chunks) : undefined;
-  return new Request(new URL(req.url, origin), { method: req.method, headers: req.headers, body: ['GET', 'HEAD'].includes(req.method) ? undefined : body });
+  const headers = new Headers(Object.entries(req.headers).filter(([, v]) => typeof v === 'string'));
+  headers.set(CLIENT_HEADER, req.socket.remoteAddress ?? '');
+  return new Request(new URL(req.url, origin), { method: req.method, headers, body: ['GET', 'HEAD'].includes(req.method) ? undefined : body });
 }
 
 export async function sendResponse(res, response) {
@@ -80,11 +84,11 @@ export async function sendResponse(res, response) {
   res.end(Buffer.from(await response.arrayBuffer()));
 }
 
-export function serveRelay({ port = 8787, host = '127.0.0.1', dir = null } = {}) {
+export function serveRelay({ port = 8787, host = '127.0.0.1', dir = null, limiter = windowLimiter() } = {}) {
   const store = dir ? fileStore(dir) : memoryStore();
   const server = http.createServer(async (req, res) => {
     try {
-      await sendResponse(res, await handle(await toRequest(req, `http://${host}:${port}`), async () => store));
+      await sendResponse(res, await handle(await toRequest(req, `http://${host}:${port}`), async () => store, limiter));
     } catch (e) {
       res.writeHead(e.status ?? 500, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ error: e.message }));

@@ -1,5 +1,20 @@
 import { DurableObject } from 'cloudflare:workers';
-import { handle, handleRoom, json, parseRoute, admit } from '../src/relay/core.mjs';
+import { handle, handleRoom, json, parseRoute, admit, frontDoor, windowLimiter, CLIENT_HEADER } from '../src/relay/core.mjs';
+
+export class Limits extends DurableObject {
+  constructor(ctx, env) {
+    super(ctx, env);
+    this.limiter = windowLimiter();
+  }
+
+  allow(kind, client) {
+    return this.limiter.allow(kind, client);
+  }
+}
+
+const durableLimiter = (env) => ({
+  allow: (kind, client) => env.LIMITS.get(env.LIMITS.idFromName(client)).allow(kind, client),
+});
 
 export class Room extends DurableObject {
   constructor(ctx, env) {
@@ -8,6 +23,7 @@ export class Room extends DurableObject {
     this.sql.exec('CREATE TABLE IF NOT EXISTS messages (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT UNIQUE NOT NULL, body TEXT NOT NULL)');
     try { this.sql.exec('ALTER TABLE messages ADD COLUMN sender TEXT'); } catch { /* column exists */ }
     this.sql.exec('CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)');
+    this.sql.exec('CREATE TABLE IF NOT EXISTS hello_slots (k TEXT PRIMARY KEY, n INTEGER NOT NULL)');
   }
 
   async fetch(request) {
@@ -50,17 +66,27 @@ export class Room extends DurableObject {
       async setPolicy(_room, policy) {
         sql.exec("INSERT INTO meta (k, v) VALUES ('policy', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v", JSON.stringify(policy));
       },
+      async hellosFrom(_room, slot) {
+        return sql.exec('SELECT n FROM hello_slots WHERE k = ?', slot).toArray()[0]?.n ?? 0;
+      },
+      async addHello(_room, slot) {
+        sql.exec('INSERT INTO hello_slots (k, n) VALUES (?, 1) ON CONFLICT(k) DO UPDATE SET n = n + 1', slot);
+      },
     };
-    return handleRoom(request, room, store);
+    return handleRoom(request, room, store, durableLimiter(this.env));
   }
 }
 
 export default {
   async fetch(request, env) {
     try {
-      const room = parseRoute(request.url);
-      if (!room) return await handle(request, async () => null);
+      const limiter = durableLimiter(env);
       const forwarded = new Request(request);
+      forwarded.headers.set(CLIENT_HEADER, request.headers.get('cf-connecting-ip') ?? '');
+      const room = parseRoute(request.url);
+      if (!room) return await handle(forwarded, async () => null, limiter);
+      const refused = await frontDoor(forwarded, limiter);
+      if (refused) return refused;
       forwarded.headers.set('x-dti-room', room);
       return await env.ROOMS.get(env.ROOMS.idFromName(room)).fetch(forwarded);
     } catch (e) {
