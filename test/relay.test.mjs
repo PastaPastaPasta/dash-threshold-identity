@@ -146,15 +146,22 @@ test('a slow new-room check cannot let two first joins both own a room', async (
   const store = memoryStore();
   let release;
   const gate = new Promise((r) => (release = r));
-  const limiter = { allow: async (kind) => { if (kind === 'rooms') await gate; return true; } };
+  let checks = 0;
+  const limiter = { allow: async (kind) => { if (kind === 'rooms') { checks++; await gate; } return true; } };
   const room = 'limit-room-race';
   const [a, b] = people(2);
   const first = post(store, limiter, '198.51.100.20', room, hello(a.keys, room, 'a'));
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(checks, 1);
   const second = post(store, limiter, '198.51.100.21', room, hello(b.keys, room, 'b'));
+  await new Promise((r) => setTimeout(r, 20));
   release();
-  await Promise.all([first, second]);
-  const firstSeq = (await store.list(room, 0, 10))[0];
-  assert.equal((await store.policy(room)).owner, JSON.parse(firstSeq.body).from);
+  const statuses = (await Promise.all([first, second])).map((r) => r.status);
+  assert.deepEqual(statuses, [200, 200]);
+  const rows = await store.list(room, 0, 10);
+  const policy = await store.policy(room);
+  assert.equal(policy.owner, JSON.parse(rows[0].body).from);
+  assert.equal(policy.hellos, 2);
 });
 
 test('addresses are bucketed per IPv4 address and per IPv6 /64', () => {

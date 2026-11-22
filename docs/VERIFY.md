@@ -17,7 +17,7 @@ You need git and Node 22 or newer.
 git clone https://github.com/PastaPastaPasta/dash-threshold-identity
 cd dash-threshold-identity
 git checkout <commit>            # the commit you expect to be deployed, e.g. main
-npm ci --ignore-scripts
+npm ci --ignore-scripts          # a real node_modules directory; a symlinked or pnpm layout builds different bytes
 npm run web:verify -- https://new-multisig.dashhq.org   # builds, then compares
 ```
 

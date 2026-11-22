@@ -9,6 +9,18 @@ export function fileStore(dir) {
   const file = (room) => path.join(dir, `${room}.jsonl`);
   const slotFile = (room) => path.join(dir, `${room}.slots.json`);
   const slots = new Map();
+  const loadSlots = (room) => {
+    if (!slots.has(room)) {
+      let counts = {};
+      try {
+        counts = JSON.parse(fs.readFileSync(slotFile(room), 'utf8'));
+      } catch (e) {
+        if (e.code !== 'ENOENT') console.error(`ignoring unreadable ${slotFile(room)}: ${e.message}`);
+      }
+      slots.set(room, counts);
+    }
+    return slots.get(room);
+  };
   const loaded = new Set();
   const load = (room) => {
     if (loaded.has(room)) return;
@@ -53,11 +65,10 @@ export function fileStore(dir) {
     },
     async countFrom(room, from) { load(room); return mem.countFrom(room, from); },
     async hellosFrom(room, slot) {
-      if (!slots.has(room)) slots.set(room, fs.existsSync(slotFile(room)) ? JSON.parse(fs.readFileSync(slotFile(room), 'utf8')) : {});
-      return slots.get(room)[slot] ?? 0;
+      return loadSlots(room)[slot] ?? 0;
     },
     async addHello(room, slot) {
-      const counts = { ...slots.get(room), [slot]: (slots.get(room)?.[slot] ?? 0) + 1 };
+      const counts = { ...loadSlots(room), [slot]: (loadSlots(room)[slot] ?? 0) + 1 };
       fs.writeFileSync(`${slotFile(room)}.tmp`, JSON.stringify(counts));
       fs.renameSync(`${slotFile(room)}.tmp`, slotFile(room));
       slots.set(room, counts);
