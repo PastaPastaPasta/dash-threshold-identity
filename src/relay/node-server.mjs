@@ -1,12 +1,26 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
-import { handle, memoryStore, admit, MAX_MESSAGE_BYTES } from './core.mjs';
+import { handle, memoryStore, admit, windowLimiter, clientBucket, CLIENT_HEADER, MAX_MESSAGE_BYTES } from './core.mjs';
 
 export function fileStore(dir) {
   const mem = memoryStore();
   fs.mkdirSync(dir, { recursive: true });
   const file = (room) => path.join(dir, `${room}.jsonl`);
+  const slotFile = (room) => path.join(dir, `${room}.slots.json`);
+  const slots = new Map();
+  const loadSlots = (room) => {
+    if (!slots.has(room)) {
+      let counts = {};
+      try {
+        counts = JSON.parse(fs.readFileSync(slotFile(room), 'utf8'));
+      } catch (e) {
+        if (e.code !== 'ENOENT') console.error(`ignoring unreadable ${slotFile(room)}: ${e.message}`);
+      }
+      slots.set(room, counts);
+    }
+    return slots.get(room);
+  };
   const loaded = new Set();
   const load = (room) => {
     if (loaded.has(room)) return;
@@ -50,6 +64,15 @@ export function fileStore(dir) {
       return seq;
     },
     async countFrom(room, from) { load(room); return mem.countFrom(room, from); },
+    async hellosFrom(room, slot) {
+      return loadSlots(room)[slot] ?? 0;
+    },
+    async addHello(room, slot) {
+      const counts = { ...loadSlots(room), [slot]: (loadSlots(room)[slot] ?? 0) + 1 };
+      fs.writeFileSync(`${slotFile(room)}.tmp`, JSON.stringify(counts));
+      fs.renameSync(`${slotFile(room)}.tmp`, slotFile(room));
+      slots.set(room, counts);
+    },
     async exists(room, id) { load(room); return mem.exists(room, id); },
     async policy(room) { load(room); return mem.policy(room); },
     async setPolicy(room, policy) { load(room); return mem.setPolicy(room, policy); },
@@ -59,7 +82,7 @@ export function fileStore(dir) {
   };
 }
 
-export async function toRequest(req, origin, limit = MAX_MESSAGE_BYTES + 1024) {
+export async function toRequest(req, origin, limit = MAX_MESSAGE_BYTES + 1024, client = null) {
   const chunks = [];
   let size = 0;
   await new Promise((resolve, reject) => {
@@ -72,7 +95,10 @@ export async function toRequest(req, origin, limit = MAX_MESSAGE_BYTES + 1024) {
   });
   if (size > limit) throw Object.assign(new Error('message too large'), { status: 413 });
   const body = chunks.length ? Buffer.concat(chunks) : undefined;
-  return new Request(new URL(req.url, origin), { method: req.method, headers: req.headers, body: ['GET', 'HEAD'].includes(req.method) ? undefined : body });
+  const headers = new Headers(Object.entries(req.headers).filter(([, v]) => typeof v === 'string'));
+  headers.delete(CLIENT_HEADER);
+  if (client) headers.set(CLIENT_HEADER, client);
+  return new Request(new URL(req.url, origin), { method: req.method, headers, body: ['GET', 'HEAD'].includes(req.method) ? undefined : body });
 }
 
 export async function sendResponse(res, response) {
@@ -80,11 +106,11 @@ export async function sendResponse(res, response) {
   res.end(Buffer.from(await response.arrayBuffer()));
 }
 
-export function serveRelay({ port = 8787, host = '127.0.0.1', dir = null } = {}) {
+export function serveRelay({ port = 8787, host = '127.0.0.1', dir = null, limits = false, limiter = limits ? windowLimiter() : null } = {}) {
   const store = dir ? fileStore(dir) : memoryStore();
   const server = http.createServer(async (req, res) => {
     try {
-      await sendResponse(res, await handle(await toRequest(req, `http://${host}:${port}`), async () => store));
+      await sendResponse(res, await handle(await toRequest(req, `http://${host}:${port}`, undefined, limiter ? clientBucket(req.socket.remoteAddress) : null), async () => store, limiter));
     } catch (e) {
       res.writeHead(e.status ?? 500, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ error: e.message }));

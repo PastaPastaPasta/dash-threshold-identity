@@ -1,19 +1,63 @@
 import { verifyEnvelope, envelopeId } from '../envelope.mjs';
-import { ROOM_PATTERN, isHex } from '../util.mjs';
+import { ROOM_PATTERN, isHex, sha256hex } from '../util.mjs';
 
 export const MAX_MESSAGE_BYTES = 300 * 1024;
 export const MAX_MESSAGES_PER_ROOM = 5000;
 export const MAX_MESSAGES_PER_SENDER = 500;
 export const MAX_HELLOS = 256;
+export const MAX_HELLOS_PER_CLIENT = 16;
+export const CLIENT_HEADER = 'x-dti-client';
+export const RATE_LIMITS = { reads: { limit: 600, periodMs: 60000 }, posts: { limit: 60, periodMs: 60000 }, rooms: { limit: 10, periodMs: 60000 } };
 const PAGE = 200;
 
-const CORS = {
+export const CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET, POST, OPTIONS',
   'access-control-allow-headers': 'content-type',
 };
 
-export const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...CORS } });
+export const json = (status, body, headers = {}) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...CORS, ...headers } });
+
+const slowDown = (what) => json(429, { error: `too many ${what} from this address; try again in a minute` }, { 'retry-after': '60' });
+
+export function clientBucket(address) {
+  const a = String(address ?? '').trim().toLowerCase().replace(/%.*$/, '');
+  if (!a) return 'unknown';
+  const mapped = a.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/);
+  if (mapped) return mapped[1];
+  if (!a.includes(':')) return a;
+  const [head, tail] = a.split('::');
+  const left = head ? head.split(':') : [];
+  const right = tail === undefined ? [] : tail ? tail.split(':') : [];
+  const groups = tail === undefined ? left : [...left, ...Array(Math.max(0, 8 - left.length - right.length)).fill('0'), ...right];
+  return `${groups.slice(0, 4).map((g) => g.padStart(4, '0')).join(':')}::/64`;
+}
+
+export function windowLimiter(limits = RATE_LIMITS, now = Date.now) {
+  const windows = new Map();
+  return {
+    async allow(kind, client) {
+      const { limit, periodMs } = limits[kind];
+      const start = Math.floor(now() / periodMs) * periodMs;
+      const key = `${kind}|${client}`;
+      const w = windows.get(key);
+      if (!w || w.start !== start) {
+        if (windows.size > 50000) for (const [k, v] of windows) if (v.start !== start) windows.delete(k);
+        windows.set(key, { start, n: 1 });
+        return true;
+      }
+      w.n++;
+      return w.n <= limit;
+    },
+  };
+}
+
+export async function frontDoor(request, limiter) {
+  const client = request.headers.get(CLIENT_HEADER);
+  if (!limiter || !client || request.method === 'OPTIONS') return null;
+  const kind = request.method === 'GET' || request.method === 'HEAD' ? 'reads' : 'posts';
+  return (await limiter.allow(kind, client)) ? null : slowDown('requests');
+}
 
 export function parseRoute(url) {
   const m = new URL(url).pathname.match(/^\/v1\/rooms\/([^/]+)\/messages$/);
@@ -37,7 +81,17 @@ export function admit(policy, envelope) {
   return { ok: true, next: { ...p, pinned: [...new Set([...p.pinned, ...named])] } };
 }
 
-export async function handleRoom(request, room, store) {
+const queues = new Map();
+
+function serially(key, fn) {
+  const run = (queues.get(key) ?? Promise.resolve()).then(fn, fn);
+  const tail = run.catch(() => {});
+  queues.set(key, tail);
+  tail.then(() => queues.get(key) === tail && queues.delete(key));
+  return run;
+}
+
+export async function handleRoom(request, room, store, limiter = null) {
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
   const url = new URL(request.url);
   if (request.method === 'GET') {
@@ -58,32 +112,50 @@ export async function handleRoom(request, room, store) {
     }
     if (envelope?.room !== room) return json(400, { error: 'envelope is for another room' });
     if (!verifyEnvelope(envelope)) return json(400, { error: 'envelope signature does not verify' });
-    const id = envelopeId(envelope);
-    if (await store.exists(room, id)) return json(200, { id, seq: null, duplicate: true });
-    if ((await store.count(room)) >= MAX_MESSAGES_PER_ROOM) return json(429, { error: 'room is full' });
-    if ((await store.countFrom(room, envelope.from)) >= MAX_MESSAGES_PER_SENDER) return json(429, { error: 'too many messages from this key' });
-    const verdict = admit(await store.policy(room), envelope);
-    if (!verdict.ok) return json(403, { error: verdict.reason });
-    const seq = await store.append(room, id, JSON.stringify(envelope), envelope.from);
-    await store.setPolicy(room, verdict.next);
-    return json(200, { id, seq, duplicate: false });
+    return serially(room, async () => {
+      const id = envelopeId(envelope);
+      if (await store.exists(room, id)) return json(200, { id, seq: null, duplicate: true });
+      if ((await store.count(room)) >= MAX_MESSAGES_PER_ROOM) return json(429, { error: 'room is full' });
+      if ((await store.countFrom(room, envelope.from)) >= MAX_MESSAGES_PER_SENDER) return json(429, { error: 'too many messages from this key' });
+      const client = request.headers.get(CLIENT_HEADER);
+      const slot = client && envelope.type === 'hello' ? sha256hex(`dti-relay|${room}|${client}`).slice(0, 32) : null;
+      if (slot) {
+        if (!(await store.count(room)) && limiter && !(await limiter.allow('rooms', client))) return slowDown('new rooms');
+        if ((await store.hellosFrom(room, slot)) >= MAX_HELLOS_PER_CLIENT) return json(403, { error: `this network has already joined ${MAX_HELLOS_PER_CLIENT} members to this room; join from another network or start a new room` });
+      }
+      const verdict = admit(await store.policy(room), envelope);
+      if (!verdict.ok) return json(403, { error: verdict.reason });
+      const seq = await store.append(room, id, JSON.stringify(envelope), envelope.from);
+      if (slot) await store.addHello(room, slot);
+      await store.setPolicy(room, verdict.next);
+      return json(200, { id, seq, duplicate: false });
+    });
   }
   return json(405, { error: 'method not allowed' });
 }
 
-export async function handle(request, storeFor) {
+export async function handle(request, storeFor, limiter = null) {
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
+  const refused = await frontDoor(request, limiter);
+  if (refused) return refused;
   const url = new URL(request.url);
   if (url.pathname === '/' || url.pathname === '/v1/health') return json(200, { ok: true, service: 'dti-relay', version: 1 });
   const room = parseRoute(request.url);
   if (!room) return json(404, { error: 'not found' });
-  return handleRoom(request, room, await storeFor(room));
+  return handleRoom(request, room, await storeFor(room), limiter);
 }
 
 export function memoryStore() {
   const rooms = new Map();
   const get = (room) => rooms.get(room) ?? rooms.set(room, { rows: [], ids: new Set(), policy: null }).get(room);
+  const hellos = new Map();
   return {
+    async hellosFrom(room, slot) {
+      return hellos.get(`${room}|${slot}`) ?? 0;
+    },
+    async addHello(room, slot) {
+      hellos.set(`${room}|${slot}`, (hellos.get(`${room}|${slot}`) ?? 0) + 1);
+    },
     async exists(room, id) {
       return get(room).ids.has(id);
     },

@@ -49,3 +49,5 @@ dialog { max-height: calc(100dvh - 32px); overflow: auto; }
   dialog pre { max-height: 300px; }
 }
 .masked { -webkit-text-security: disc; }
+.build { margin: 12px 0 0; font-size: var(--dh-fs-sm); color: var(--dh-ink-2); }
+.build code { overflow-wrap: anywhere; }

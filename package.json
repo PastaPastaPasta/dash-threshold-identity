@@ -15,7 +15,9 @@
     "relay:dev": "wrangler dev --config relay/wrangler.toml",
     "web:build": "node web/build.mjs",
     "web:dev": "npm run web:build && wrangler dev --config web/wrangler.toml",
-    "web:deploy": "npm run web:build && wrangler deploy --config web/wrangler.toml"
+    "web:deploy": "npm run web:build && wrangler deploy --config web/wrangler.toml",
+    "web:hash": "npm run web:build && node web/verify.mjs --write-readme",
+    "web:verify": "npm run web:build && node web/verify.mjs"
   },
   "dependencies": {
     "@dashevo/dashcore-lib": "0.26.1",

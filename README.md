@@ -82,6 +82,8 @@ It covers rooms and bundles, fingerprints, ceremonies, funding, proposals with t
 
 `web/` builds the same UI into a page that runs entirely in the browser, with the relay on the same origin. It is locked to testnet, keeps the seed phrase in the tab's memory only, and is deployed at https://new-multisig.dashhq.org. See [docs/HOSTED.md](docs/HOSTED.md) for how it reuses `src/`, the testnet lock and the risks of serving it from a public domain.
 
+The build is reproducible. Every served file except `index.html` is listed with its SHA-256 in `build-manifest.txt`; `index.html` carries that manifest's hash (the bundle hash, shown on the page), so the hash of `index.html` covers the whole site. Page hash of this commit: `0312cdafb9306ea338da1776709b55eaddb195e4259a90acd3a6a92cd58d195f`. To check that the live site serves exactly this source, see [docs/VERIFY.md](docs/VERIFY.md). What a mainnet build would need is in [docs/MAINNET-SIGNOFF.md](docs/MAINNET-SIGNOFF.md).
+
 ## The relay
 
 ```sh
@@ -89,7 +91,7 @@ cd relay && npx wrangler deploy     # Cloudflare Worker + one SQLite Durable Obj
 dti relay serve --port 8787 --dir ./relay-data   # or the same API on any machine with Node
 ```
 
-The relay only stores and returns messages. It refuses messages whose signature does not check out or that name another room. It also refuses anything but a join from keys that are neither the room's creator nor named in one of its ceremonies. It cannot forge, alter or read secret messages; key shares travel encrypted to their recipient. A dishonest relay can only withhold messages, which stalls a ceremony or proposal but cannot break it. A room accepts at most 256 joins, so anyone who knows a room id can use up its join slots; members who have already joined are unaffected, but newcomers then need a new room.
+The relay only stores and returns messages. It refuses messages whose signature does not check out or that name another room. It also refuses anything but a join from keys that are neither the room's creator nor named in one of its ceremonies. It cannot forge, alter or read secret messages; key shares travel encrypted to their recipient. A dishonest relay can only withhold messages, which stalls a ceremony or proposal but cannot break it. A room accepts at most 256 joins. The hosted relay also allows at most 16 joins per room from one network (an IPv4 address or an IPv6 /64), 600 reads and 60 posts a minute, and 10 new rooms a minute; `dti relay serve --limits` turns on the same limits, which are off by default because a relay behind a proxy sees every client as one address. Members who have already joined are unaffected by a full room, but newcomers then need a new room.
 
 ## Development
 

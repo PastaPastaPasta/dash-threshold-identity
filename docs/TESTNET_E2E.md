@@ -79,6 +79,16 @@ The later commits change the completion message and the relay's membership rules
 
 The page's proved read shows the four on-chain keys equal to the group keys. A separate Node process confirmed the identity's four BLS keys, nonce 1 and a balance 103,516,000 credits lower after the transfer (1e8 plus the fee). No page errors and no CSP violations from the app occurred; the one blocked script was Cloudflare's zone-injected analytics beacon, which the Worker now prevents with `Cache-Control: no-transform`.
 
+### Returning the burned test funds (2026-11-22)
+
+The three phrases used above were exposed in an early screenshot, so they are treated as burned. Their remaining tDASH went back to the faucet's testnet deposit address `yPrynRN6ViX2rCcRL5SoSi8ntcWgdHSEaS`:
+
+- The two asset locks from aborted runs (`bd95d87c…`, `7ca4741f…`, 0.5 tDASH each) cannot be spent on Core. They topped up the group identity, using the seed-derived registration key that their credit outputs pay.
+- A 2-of-3 credit withdrawal (bob and carol, TRANSFER key) then sent 149e9 credits to the faucet address: asset-unlock transaction `f55cca46…`, 1.4899981 tDASH.
+- Alice's funding address had 0.49997 tDASH left; transaction `e1f144e2…` sent 0.49996 tDASH to the same address.
+
+The identity keeps about 0.75e9 credits, below what a further withdrawal and its fee need.
+
 ## Earlier runs
 
 The same steps ran three earlier times that day on earlier commits of this branch. Each run turned up fixes, which are now in this PR:
