@@ -37,17 +37,26 @@ Each layer is enough on its own to stop a mainnet action:
 
 ## Risks of serving key-handling code from a public domain
 
-- **Whoever controls the deployment controls the code.** A changed bundle could read the seed phrase as it is typed. CSP limits where it could send it, but the same deployment sets the CSP. This is the main difference from the CLI, where a member runs code they installed. Mitigations for later: reproducible builds with published hashes, a signed release manifest, or a packaged local build.
+- **Whoever controls the deployment controls the code.** A changed bundle could read the seed phrase as it is typed. CSP limits where it could send it, but the same deployment sets the CSP. This is the main difference from the CLI, where a member runs code they installed. The build is reproducible and the page shows its bundle hash, so anyone can check what was served ([VERIFY.md](VERIFY.md)); that detects a changed bundle but does not prevent one.
 - **Deployment.** `deploy-web.yml` deploys only from `main`, installs without running dependency install scripts, and needs the `web` environment's Cloudflare secrets. The page is served only on `new-multisig.dashhq.org` (`workers_dev = false`). Entry and chunk files have content hashes, so a deploy never mixes old and new code.
 - **The domain is shared.** Any script on `new-multisig.dashhq.org` runs with the page's access. Nothing else is served from that host, and the Worker answers only `GET`/`HEAD` for files and the relay API under `/v1/`.
 - **Supply chain.** The bundle includes `@dashevo/evo-sdk`, `@dashevo/dashcore-lib` and their dependencies, pinned by `package-lock.json`.
 - **Browser exposure.** Extensions, a compromised browser profile, clipboard managers and screen sharing can see the phrase.
-- **Relay abuse.** The relay is public: anyone can create rooms and use up a room's join slots (see the README). It cannot forge, alter or read secret messages.
+- **Relay abuse.** The relay is public. Per client address it allows 600 reads and 60 posts a minute, 10 new rooms a minute, and 4 joins in any one room, so one address cannot use up a room's 256 join slots. The Worker keeps these counters in a `Limits` Durable Object per address; rooms store only a salted hash of the address. Many addresses can still fill a room, and the relay cannot forge, alter or read secret messages.
 - **Testnet only.** Losing a testnet phrase loses practice funds. Nothing on this page can move mainnet DASH or credits.
+
+## Cloudflare zone settings for this host
+
+The dashhq.org zone has Web Analytics automatic setup on for every host, and Email Obfuscation on. The Worker already stops both on this host: it sends HTML with `Cache-Control: no-transform`, which Cloudflare honours for these features, and the CSP would block an injected script anyway. Rocket Loader is off for the zone. The agent tokens cannot write zone configuration rules or Web Analytics rules, so these two host-scoped rules are for someone with zone access:
+
+1. **Configuration Rule** (Rules → Configuration Rules → Create): name `new-multisig: no injected scripts`, expression `(http.host eq "new-multisig.dashhq.org")`. Settings: Rocket Loader **Off**, Email Obfuscation **Off**, **Disable Zaraz**, **Disable Real User Monitoring (RUM)**, **Disable Apps**. Rollback: delete that rule.
+2. **Web Analytics rule** (Analytics → Web Analytics → dashhq.org → Manage site → Advanced options → Add rule): host `new-multisig.dashhq.org`, path `*`, **Exclude**. Rollback: delete that rule.
+
+`npm run web:verify -- https://new-multisig.dashhq.org` fails if anything is injected into `index.html`, because it compares the served page byte for byte.
 
 ## Before a mainnet build
 
-A mainnet build needs Pasta's sign-off, and at least:
+[MAINNET-SIGNOFF.md](MAINNET-SIGNOFF.md) has the decisions and checklist, each with a recommendation. In short, a mainnet build needs Pasta's sign-off, and at least:
 
 - an independent security review of the browser build and the Worker, and a decision on code-delivery trust (reproducible builds with published hashes, subresource integrity for a pinned release, or a downloadable signed build instead of a live site);
 - a persisted, exportable asset-lock journal so a closed tab can resume or recover a lock, and an explicit mainnet confirmation step in the page like the CLI's `--confirm-mainnet`;
