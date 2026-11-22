@@ -7,6 +7,8 @@ export function fileStore(dir) {
   const mem = memoryStore();
   fs.mkdirSync(dir, { recursive: true });
   const file = (room) => path.join(dir, `${room}.jsonl`);
+  const slotFile = (room) => path.join(dir, `${room}.slots.json`);
+  const slots = new Map();
   const loaded = new Set();
   const load = (room) => {
     if (loaded.has(room)) return;
@@ -50,8 +52,16 @@ export function fileStore(dir) {
       return seq;
     },
     async countFrom(room, from) { load(room); return mem.countFrom(room, from); },
-    hellosFrom: mem.hellosFrom,
-    addHello: mem.addHello,
+    async hellosFrom(room, slot) {
+      if (!slots.has(room)) slots.set(room, fs.existsSync(slotFile(room)) ? JSON.parse(fs.readFileSync(slotFile(room), 'utf8')) : {});
+      return slots.get(room)[slot] ?? 0;
+    },
+    async addHello(room, slot) {
+      const counts = { ...slots.get(room), [slot]: (slots.get(room)?.[slot] ?? 0) + 1 };
+      fs.writeFileSync(`${slotFile(room)}.tmp`, JSON.stringify(counts));
+      fs.renameSync(`${slotFile(room)}.tmp`, slotFile(room));
+      slots.set(room, counts);
+    },
     async exists(room, id) { load(room); return mem.exists(room, id); },
     async policy(room) { load(room); return mem.policy(room); },
     async setPolicy(room, policy) { load(room); return mem.setPolicy(room, policy); },

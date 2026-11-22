@@ -176,3 +176,17 @@ test('the Node relay uses the socket address, not a client-supplied header', asy
   await fetch(`http://127.0.0.1:${server.address().port}/v1/rooms/${ROOM}/messages?after=0`, { headers: { [CLIENT_HEADER]: '192.0.2.1' } });
   assert.deepEqual(seen, ['127.0.0.1']);
 });
+
+test('the Node relay keeps join counts on disk across restarts', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dti-slots-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const room = 'slots-restart-room';
+  const keys = Array.from({ length: MAX_HELLOS_PER_CLIENT + 1 }, (_, i) => participantKeys(new Uint8Array(32).fill(i + 40)));
+  const send = (server, k) => fetch(`http://127.0.0.1:${server.address().port}/v1/rooms/${room}/messages`, { method: 'POST', body: JSON.stringify(hello(k, room, 'x')) });
+  let server = await serveRelay({ port: 0, dir, limits: true });
+  for (const k of keys.slice(0, MAX_HELLOS_PER_CLIENT)) assert.equal((await send(server, k)).status, 200);
+  server.close();
+  server = await serveRelay({ port: 0, dir, limits: true });
+  assert.equal((await send(server, keys.at(-1))).status, 403);
+  server.close();
+});
