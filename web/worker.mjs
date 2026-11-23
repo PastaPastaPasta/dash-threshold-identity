@@ -1,7 +1,7 @@
 import relay from '../relay/worker.mjs';
 
 export { Room, Limits } from '../relay/worker.mjs';
-import { SECURITY } from './headers.mjs';
+import { SECURITY, securityFor, pageNetwork } from './headers.mjs';
 
 export default {
   async fetch(request, env) {
@@ -17,7 +17,7 @@ export default {
     if (request.method !== 'GET' && request.method !== 'HEAD') return new Response('method not allowed', { status: 405, headers: SECURITY });
     const asset = await env.ASSETS.fetch(request);
     const response = new Response(asset.body, asset);
-    for (const [k, v] of Object.entries(SECURITY)) response.headers.set(k, v);
+    for (const [k, v] of Object.entries(securityFor(pageNetwork(request.url)))) response.headers.set(k, v);
     const hashed = /-[A-Z0-9]{8}\.js$/.test(url.pathname);
     response.headers.set('cache-control', !response.ok ? 'no-store' : hashed ? 'public, max-age=31536000, immutable' : 'no-cache, no-transform');
     return response;

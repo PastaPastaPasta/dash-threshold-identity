@@ -1,5 +1,6 @@
 import * as evo from '@dashevo/evo-sdk';
 import { sleep } from '../util.mjs';
+import { sdkFor } from '../networks.mjs';
 
 let ready;
 export async function sdkModule() {
@@ -17,7 +18,7 @@ export async function connect(network, { timeoutMs = 30000, attempts = 6 } = {})
   let last;
   for (let i = 0; i < attempts; i++) {
     try {
-      const sdk = network === 'mainnet' ? m.EvoSDK.mainnetTrusted({ settings: { timeoutMs } }) : m.EvoSDK.testnetTrusted({ settings: { timeoutMs } });
+      const sdk = sdkFor(m, network, { timeoutMs });
       await sdk.connect();
       await sdk.system.status();
       return sdk;

@@ -1,5 +1,5 @@
 import { envelopeId, verifyEnvelope } from './envelope.mjs';
-import { validateConfig, ceremonyId, participantIndex, revealDigest, checkRevealShape, groupKeys, transcriptDigest, judgeComplaint, NETWORKS, SLOT_PATTERN } from './ceremony.mjs';
+import { validateConfig, ceremonyId, participantIndex, revealDigest, checkRevealShape, groupKeys, transcriptDigest, judgeComplaint, isNetwork, SLOT_PATTERN } from './ceremony.mjs';
 import { verify } from './bls.mjs';
 import { fingerprint } from './derive.mjs';
 import { digest, isHex, unhex, memo, sha256hex, getOwn } from './util.mjs';
@@ -22,7 +22,7 @@ function sortMessages(messages) {
 }
 
 export function validProposalBody(b) {
-  if (!b || typeof b !== 'object' || !NETWORKS.includes(b.network)) return false;
+  if (!b || typeof b !== 'object' || !isNetwork(b.network)) return false;
   if (!b.intent || typeof b.intent !== 'object' || typeof b.intent.type !== 'string') return false;
   if (!isHex(b.unsigned) || !isHex(b.signable) || !b.signable.length) return false;
   if (!Array.isArray(b.requirements) || !b.requirements.length || b.requirements.length > 16) return false;

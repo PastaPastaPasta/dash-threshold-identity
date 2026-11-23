@@ -5,15 +5,13 @@ import { sdkModule, retry } from './sdk.mjs';
 
 const { PrivateKey, Transaction, Script, Opcode, Address } = dashcore;
 
-export const INSIGHT = {
-  testnet: 'https://insight.testnet.networks.dash.org/insight-api',
-  mainnet: 'https://insight.dash.org/insight-api',
-};
-const CORE_NET = { testnet: 'testnet', mainnet: 'livenet' };
+import { network as networkOf } from '../networks.mjs';
+
+const coreNet = (network) => networkOf(network).core;
 const FEE_PER_KB = 1000;
 const MAX_FEE = 100000;
 
-const insight = (network) => globalThis.process?.env?.DTI_INSIGHT_URL || INSIGHT[network];
+const insight = (network) => networkOf(network).insight;
 
 async function getJson(url, init = {}) {
   const response = await fetch(url, { ...init, signal: AbortSignal.timeout(30000) });
@@ -25,8 +23,8 @@ async function getJson(url, init = {}) {
 
 export function keyAddress(network, path, seed) {
   const k = coreKey(seed, path);
-  const pk = new PrivateKey(k.privateKeyHex, CORE_NET[network]);
-  return { path, privateKey: pk, address: pk.toAddress(CORE_NET[network]).toString() };
+  const pk = new PrivateKey(k.privateKeyHex, coreNet(network));
+  return { path, privateKey: pk, address: pk.toAddress(coreNet(network)).toString() };
 }
 
 export const fundingAccount = (seed, network) => keyAddress(network, coreFundingPath(network, 0), seed);
@@ -34,7 +32,7 @@ export const registrationKey = (seed, network, index) => keyAddress(network, ass
 export const topUpKey = (seed, network, index) => keyAddress(network, assetLockTopUpPath(network, index), seed);
 
 export function addressToPubKeyHash(network, address) {
-  const a = Address.fromString(address, CORE_NET[network]);
+  const a = Address.fromString(address, coreNet(network));
   assert(a.isPayToPublicKeyHash(), 'withdrawals go to a P2PKH address');
   return hex(a.hashBuffer);
 }
@@ -51,7 +49,7 @@ export async function verifiedUtxos(network, address) {
     const tx = new Transaction(raw.rawtx);
     assert(tx.hash === u.txid, `Insight returned a transaction that does not hash to ${u.txid}`);
     const output = tx.outputs[u.vout];
-    assert(output && output.script.toAddress(CORE_NET[network])?.toString() === address, `output ${u.txid}:${u.vout} does not pay ${address}`);
+    assert(output && output.script.toAddress(coreNet(network))?.toString() === address, `output ${u.txid}:${u.vout} does not pay ${address}`);
     out.push({ ...u, satoshis: output.satoshis, scriptPubKey: output.script.toHex() });
   }
   return out;
@@ -78,7 +76,7 @@ export function buildAssetLock({ network, funding, utxoList, creditAddress, duff
   assert(total >= duffs + 20000, `funding address ${funding.address} holds ${total} spendable duffs; need ${duffs} + fees`);
   const payload = Transaction.Payload.AssetLockPayload.fromJSON({
     version: 1,
-    creditOutputs: [{ satoshis: duffs, script: Script.buildPublicKeyHashOut(Address.fromString(creditAddress, CORE_NET[network])).toString() }],
+    creditOutputs: [{ satoshis: duffs, script: Script.buildPublicKeyHashOut(Address.fromString(creditAddress, coreNet(network))).toString() }],
   });
   const tx = new Transaction()
     .setType(Transaction.TYPES.TRANSACTION_ASSET_LOCK)

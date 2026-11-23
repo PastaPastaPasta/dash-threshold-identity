@@ -6,6 +6,7 @@ import { wordlist } from '@scure/bip39/wordlists/english.js';
 import { HDKey } from '@scure/bip32';
 import { hex, utf8, lengthPrefixed, sha256hex, assert } from './util.mjs';
 import { mod, bytesToScalar } from './bls.mjs';
+import { network as networkOf } from './networks.mjs';
 
 const SALT = utf8('dash-threshold-identity/v1');
 
@@ -48,7 +49,6 @@ export function deterministicNonce(seed, label, parts) {
   return kdfScalar(seed, `nonce/${label}`, parts);
 }
 
-const COIN = { mainnet: 5, testnet: 1 };
 
 export function coreKey(seed, path) {
   const node = HDKey.fromMasterSeed(seed).derive(path);
@@ -57,6 +57,6 @@ export function coreKey(seed, path) {
 }
 
 const ACCOUNT = 17492;
-export const coreFundingPath = (network, index = 0) => `m/44'/${COIN[network]}'/${ACCOUNT}'/0/${index}`;
-export const assetLockRegistrationPath = (network, index) => `m/44'/${COIN[network]}'/${ACCOUNT}'/1'/${index}'`;
-export const assetLockTopUpPath = (network, index) => `m/44'/${COIN[network]}'/${ACCOUNT}'/2'/${index}'`;
+export const coreFundingPath = (network, index = 0) => `m/44'/${networkOf(network).coin}'/${ACCOUNT}'/0/${index}`;
+export const assetLockRegistrationPath = (network, index) => `m/44'/${networkOf(network).coin}'/${ACCOUNT}'/1'/${index}'`;
+export const assetLockTopUpPath = (network, index) => `m/44'/${networkOf(network).coin}'/${ACCOUNT}'/2'/${index}'`;
