@@ -108,6 +108,7 @@ test('a hosted page uses only groups, ceremonies and bundles of its own network'
 
   const created = await s.createRoom({ label: 'fresh', name: 'p1' });
   assert.match(created.room, /^t_[0-9a-f]{32}$/);
+  assert.equal(s.status().group, 'fresh');
   assert.throws(() => s.useRoom(`m_${'cd'.repeat(16)}`), /on Mainnet, but this page is on Testnet/);
 
   attach(s);
@@ -175,4 +176,23 @@ test('the old preview host and plain HTTP redirect to the production host, but r
   assert.equal(go('https://new-multisig.dashhq.org/v1/rooms/t_1/messages'), null);
   assert.equal(go('https://new-multisig.dashhq.org/', 'POST'), null);
   assert.equal(go('http://127.0.0.1:8787/'), null);
+});
+
+test('members share the group name and see who said they will pay', async () => {
+  const { reduce } = await import('../src/state.mjs');
+  const participant = await import('../src/participant.mjs');
+  const ps = people(3);
+  const room = 'name-room';
+  const cid = 'ab'.repeat(32);
+  const msgs = [
+    participant.hello(ps[0].keys, room, 'ana', { group: 'Example foundation' }),
+    participant.hello(ps[1].keys, room, 'ben'),
+    participant.hello(ps[1].keys, room, 'ben', { funding: cid }),
+    participant.hello(ps[2].keys, room, 'cho', { funding: 'not-a-cid' }),
+  ];
+  const s = reduce(msgs, { room });
+  assert.equal(s.hellos[ps[0].keys.authPub].group, 'Example foundation');
+  assert.equal(s.hellos[ps[1].keys.authPub].funding.cid, cid);
+  assert.equal(s.hellos[ps[2].keys.authPub].funding, undefined);
+  assert.equal(Object.keys(s.hellos).length, 3);
 });

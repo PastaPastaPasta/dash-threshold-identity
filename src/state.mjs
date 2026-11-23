@@ -60,7 +60,14 @@ export function reduce(messages, { room } = {}) {
     try {
       switch (m.type) {
         case 'hello':
-          if (typeof b.name === 'string' && isHex(b.transportPub, 32)) hellos[m.from] = { authPub: m.from, name: b.name.slice(0, 64), transportPub: b.transportPub, fingerprint: fingerprint(m.from, b.transportPub), at: m.at };
+          if (typeof b.name === 'string' && isHex(b.transportPub, 32)) {
+            const prev = hellos[m.from];
+            hellos[m.from] = {
+              authPub: m.from, name: b.name.slice(0, 64), transportPub: b.transportPub, fingerprint: fingerprint(m.from, b.transportPub), at: prev?.at ?? m.at,
+              group: typeof b.group === 'string' ? b.group.slice(0, 80) : prev?.group,
+              funding: typeof b.funding === 'string' && /^[0-9a-f]{64}$/.test(b.funding) ? { cid: b.funding, at: m.at } : prev?.funding,
+            };
+          }
           break;
         case 'config': {
           const config = validateConfig(b.config);

@@ -42,7 +42,7 @@ export class NetworkSession extends Session {
   createRoom({ label, name }) {
     const room = `${roomPrefix(this.network)}_${sha256hex(`dti-room|${this.network}|${this.keys.authPub}|${label}|${new Date().toISOString()}`).slice(0, 32)}`;
     this.data = openRoom(room, { relay: this.relay, label });
-    return this.joinRoom({ room, relay: this.relay, name });
+    return this.joinRoom({ room, relay: this.relay, name, group: label });
   }
 
   async proposeCeremony(args) {
@@ -119,6 +119,11 @@ export class NetworkSession extends Session {
     this.writable('Locking funds');
     this.onNetwork(network, 'this asset lock');
     return super.assetLock(network, args);
+  }
+
+  async claimFunding(cid) {
+    this.writable('Funding');
+    return super.claimFunding(cid);
   }
 
   async proposeIdentityCreate(args) {

@@ -115,24 +115,35 @@ export class Session {
   createRoom({ label, relay, name }) {
     const room = sha256hex(`dti-room|${this.keys.authPub}|${label}|${new Date().toISOString()}`).slice(0, 32);
     this.data = openRoom(room, { relay, label });
-    return this.joinRoom({ room, relay, name });
+    return this.joinRoom({ room, relay, name, group: label });
   }
 
-  async joinRoom({ room, relay, name, label }) {
+  async joinRoom({ room, relay, name, label, group }) {
     this.useRoom(room, relay, label);
     await this.sync();
     const mine = this.state().hellos[this.keys.authPub];
-    if (!mine || mine.name !== name) await this.post([participant.hello(this.keys, room, name)]);
+    if (!mine || mine.name !== name) await this.post([participant.hello(this.keys, room, name, { group: group ?? mine?.group, funding: mine?.funding?.cid })]);
     return { room, relay: this.data.relay, ...this.whoami() };
+  }
+
+  async claimFunding(cid) {
+    const s = this.state();
+    const mine = s.hellos[this.keys.authPub];
+    assert(mine, 'join the group first');
+    assert(this.ceremony(cid).status === 'complete', 'the group keys are not ready yet');
+    await this.post([participant.hello(this.keys, this.data.room, mine.name, { group: mine.group, funding: cid })]);
+    return { cid };
   }
 
   status() {
     const s = this.state();
+    const shared = Object.values(s.hellos).filter((h) => h.group).sort((a, b) => String(a.at).localeCompare(String(b.at)))[0];
     return {
+      group: shared?.group ?? null,
       room: this.data.room,
       relay: this.data.relay,
       me: this.whoami(),
-      members: Object.values(s.hellos).map((h) => ({ name: h.name, authPub: h.authPub, fingerprint: h.fingerprint, me: h.authPub === this.keys.authPub })),
+      members: Object.values(s.hellos).map((h) => ({ name: h.name, authPub: h.authPub, fingerprint: h.fingerprint, me: h.authPub === this.keys.authPub, funding: h.funding ?? null })),
       ceremonies: Object.values(s.ceremonies).map((c) => ({
         cid: c.cid, label: c.config.label, network: c.config.network, threshold: c.config.threshold, status: c.status,
         participants: c.config.participants.map((p) => ({ index: p.index, name: p.name, fingerprint: fingerprint(p.authPub, p.transportPub), accepted: Object.hasOwn(c.accepts, p.index), committed: Object.hasOwn(c.commits, p.index), revealed: Object.hasOwn(c.reveals, p.index), completed: Object.hasOwn(c.completes, p.index) })),

@@ -40,6 +40,7 @@ function setupNetwork() {
   }
   $('#net-now').textContent = n.label;
   $('#devnet-form').hidden = n.kind !== 'devnet' && !params.has('pick-devnet');
+  $('#nets-more').open = n.kind === 'devnet' || n.kind === 'local' || params.has('pick-devnet');
   if (n.kind === 'devnet') $('#devnet-name').value = n.devnet;
   $('#local-settings').hidden = n.kind !== 'local';
   if (n.kind === 'local') {

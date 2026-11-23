@@ -24,6 +24,7 @@ export function attach(session) {
     'POST /api/ceremony/advance': base['POST /api/ceremony/advance'],
     'GET /api/funding': pinned('GET /api/funding', { network: session.network }),
     'GET /api/network': pinned('GET /api/network', { network: session.network }),
+    'POST /api/fund/claim': base['POST /api/fund/claim'],
     'POST /api/identity/create': base['POST /api/identity/create'],
     'POST /api/identity/topup': base['POST /api/identity/topup'],
     'GET /api/identity': base['GET /api/identity'],

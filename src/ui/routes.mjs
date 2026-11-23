@@ -14,6 +14,7 @@ export function routes(session) {
       return session.status();
     },
     'POST /api/room/create': async (b) => session.createRoom({ label: b.label, relay: b.relay || undefined, name: b.name }),
+    'POST /api/fund/claim': async (b) => session.claimFunding(String(b.cid)),
     'POST /api/room/join': async (b) => session.joinRoom({ room: b.room, relay: b.relay || undefined, name: b.name, label: typeof b.label === 'string' ? b.label.slice(0, 80) : undefined }),
     'GET /api/room/export': async () => exportBundle(loadRoom(session.requireRoom().room)),
     'POST /api/room/import': async (b) => { const { data, added } = importBundle(b); session.data = data; return { room: data.room, added }; },
