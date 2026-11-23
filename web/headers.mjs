@@ -43,3 +43,19 @@ export function securityFor(id = DEFAULT_NETWORK) {
 }
 
 export const SECURITY = securityFor(DEFAULT_NETWORK);
+
+export const CANONICAL_HOST = 'multisig.dashhq.org';
+const OLD_HOSTS = new Set(['new-multisig.dashhq.org']);
+
+export function canonicalRedirect(request) {
+  const url = new URL(request.url);
+  if (request.method !== 'GET' && request.method !== 'HEAD') return null;
+  if (url.pathname.startsWith('/v1/')) return null;
+  const old = OLD_HOSTS.has(url.hostname);
+  if (!old && (url.hostname !== CANONICAL_HOST || url.protocol === 'https:')) return null;
+  url.hostname = CANONICAL_HOST;
+  url.protocol = 'https:';
+  url.port = '';
+  url.hash = '';
+  return new Response(null, { status: 301, headers: { ...SECURITY, location: url.href, 'cache-control': 'public, max-age=3600' } });
+}

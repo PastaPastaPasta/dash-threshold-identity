@@ -1,6 +1,6 @@
 # Verifying the hosted build
 
-The page at https://new-multisig.dashhq.org handles your seed phrase, so you should be able to check that it is exactly the code in this repository. The build is reproducible: the same commit and lockfile always produce the same bytes.
+The page at https://multisig.dashhq.org handles your seed phrase, so you should be able to check that it is exactly the code in this repository. The build is reproducible: the same commit and lockfile always produce the same bytes.
 
 ## What gets published
 
@@ -18,7 +18,7 @@ git clone https://github.com/PastaPastaPasta/dash-threshold-identity
 cd dash-threshold-identity
 git checkout <commit>            # the commit you expect to be deployed, e.g. main
 npm ci --ignore-scripts          # a real node_modules directory; a symlinked or pnpm layout builds different bytes
-npm run web:verify -- https://new-multisig.dashhq.org   # builds, then compares
+npm run web:verify -- https://multisig.dashhq.org   # builds, then compares
 ```
 
 `web:verify` builds the commit you checked out, then fetches `index.html`, `build-manifest.txt` and every file in it from the site, without following redirects, and compares each one with your build. It also compares the live security headers (the CSP and the others in `web/headers.mjs`) with the source and flags headers that could load or redirect to other content. It prints `OK` or each mismatch and exits non-zero.
