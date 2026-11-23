@@ -83,6 +83,26 @@ Each item needs an owner and evidence: a PR, a review or a run.
 - [ ] The page says plainly what the site can and cannot see, how to verify the build, and that a phrase used here should hold nothing else.
 - [ ] Recovery is documented: losing *n−t+1* phrases loses the key, and MASTER rotation is the only way to change members.
 
+## Sign-off record
+
+**2026-11-23 01:10 CT.** Pasta, relayed by the dashhq PM: "I want mainnet etc on". `MAINNET_WRITES` stayed `false`. The PM's instruction was to run every check first and to stop before enabling if any check found a real fund-loss risk. Two checks did.
+
+| Check | Result |
+|---|---|
+| Stuck asset lock recovery | **Fails; fix in progress.** The browser keeps its asset-lock journal in memory. A tab closed between the broadcast and the identity proposal, which includes the chain-lock wait of up to 20 minutes, loses track of the lock. On reload the page builds and broadcasts a second lock, and no tool finds the first one again. The fix rebuilds the list of locks from the funding address's history on chain and resumes an unused lock. |
+| D9: funding key in the page | **Open (Pasta).** The member's phrase derives a Core key that moves DASH with no threshold. Together with deploy trust, this is a theft path for every balance typed into the page. |
+| Deploy trust and `web-mainnet` environment | **Open (Pasta).** Deploys run from the agent box with an account-wide token. Needed: a `web-mainnet` environment with a required reviewer, a branch rule and a Worker-only token. The agent's GitHub login has no admin scope. |
+| D6: Mainnet CSP | **Open.** `connect-src` allows `https://*:443`, because there is no named DAPI gateway on Mainnet. |
+| D10: typed confirmation | **Done** in this change. Every Mainnet lock, signature and broadcast asks the member to type the amount, or `mainnet` when there is no amount. `NetworkSession` refuses Mainnet approve and execute calls without `confirmMainnet`. |
+| Change and fee handling | Checked. Change returns to the funding address, and an asset lock whose fee is above `MAX_FEE` is refused. |
+| Platform version | Mainnet at protocol 14 (DAPI read on 2026-11-22). |
+| Signed release (D5), second-machine build | **Open (Pasta).** Needs a release key that Pasta holds. |
+| Zone injection rules for the host | **Open (Pasta).** The token cannot write zone rules (see [HOSTED.md](HOSTED.md)). Until then, the Worker blocks the injection with `no-transform` and the CSP. |
+| Independent security review | Partly done: agent reviews only, so not a human review. |
+| Live Mainnet dry run | **Read only.** DAPI connect and balance lookups pass. There is no Mainnet test wallet with DASH, so nothing was spent. |
+
+Turning writes on later is one change: `MAINNET_WRITES = true` in `web/src/flags.mjs` and its pinning test, then a deploy. To turn them off again, revert that commit and deploy, or roll back the Worker with `npx wrangler rollback <previous version>` from `web/`.
+
 ## What stays true regardless
 
 - The relay can't forge, alter or read secret messages; at worst it withholds them.
