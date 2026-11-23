@@ -82,7 +82,7 @@ It covers rooms and bundles, fingerprints, ceremonies, funding, proposals with t
 
 `web/` builds the same UI into a page that runs entirely in the browser, with the relay on the same origin, deployed at https://multisig.dashhq.org. It works on Testnet, devnets and a Local dashmate network; Mainnet is read only until it has been signed off. The seed phrase stays in the tab's memory. See [docs/HOSTED.md](docs/HOSTED.md) for how it reuses `src/`, the network checks and the risks of serving it from a public domain.
 
-The build is reproducible. Every served file except `index.html` is listed with its SHA-256 in `build-manifest.txt`; `index.html` carries that manifest's hash (the bundle hash, shown on the page), so the hash of `index.html` covers the whole site. Page hash of this commit: `ebf3f6696e5cc4aa55c6f7c6cd6f3c6a81cfe1210be88ab39291e1d024cd7802`. To check that the live site serves exactly this source, see [docs/VERIFY.md](docs/VERIFY.md). What a mainnet build would need is in [docs/MAINNET-SIGNOFF.md](docs/MAINNET-SIGNOFF.md).
+The build is reproducible. Every served file except `index.html` is listed with its SHA-256 in `build-manifest.txt`; `index.html` carries that manifest's hash (the bundle hash, shown on the page), so the hash of `index.html` covers the whole site. Page hash of this commit: `50de8b4da807b8764db17869275f8a7b2a44e219a7cbbafdc4bbfcaa1f28814a`. To check that the live site serves exactly this source, see [docs/VERIFY.md](docs/VERIFY.md). What a mainnet build would need is in [docs/MAINNET-SIGNOFF.md](docs/MAINNET-SIGNOFF.md).
 
 ## The relay
 

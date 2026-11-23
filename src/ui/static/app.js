@@ -401,7 +401,7 @@ function identityView() {
   const enough = f && f.duffs > 220000;
   const ip = identityProposal();
   if (ip) {
-    const retry = !readOnly() && refused(ip) && ip.proposer === myself()?.name;
+    const retry = !readOnly() && ip.status !== 'executed' && refused(ip) && ip.proposer === myself()?.name;
     return `<section class="step"><h2 class="step__title">Create the identity</h2>
     <p class="step__lede">${esc(ip.proposer)} funded the identity. The group now signs its keys, and ${esc(ip.proposer)} creates it.</p>
     ${proposalCard(ip, { focus: true })}
