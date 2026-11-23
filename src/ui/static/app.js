@@ -134,17 +134,18 @@ function currentStep(s) {
   return 'proposals';
 }
 
-function seats(people, { threshold, filled = () => false, label = () => '', done = false, refused = false } = {}) {
+function seats(people, { threshold, filled = () => false, label = () => '', done = false, refused: refusedRule = false } = {}) {
   return `<ol class="quorum" aria-label="${esc(threshold ? `${threshold} of ${people.length} needed` : 'Members')}">
     ${people.map((p, i) => `<li class="seat${filled(p) ? ' seat--on' : ''}${p.me ? ' seat--me' : ''}">
       <span class="seat__disc" aria-hidden="true">${esc((p.name ?? '?').slice(0, 1).toUpperCase())}</span>
       <span class="seat__name">${esc(p.name)}${p.me ? ' <span class="seat__you">you</span>' : ''}</span>
       <span class="seat__state">${esc(label(p, i))}</span>
     </li>`).join('')}
-  </ol>${threshold ? (refused ? `<p class="quorum__rule"><span class="quorum__count">${people.filter(filled).length} signed</span>, ${threshold} needed. Platform refused it; see below.</p>` : quorumRule(people.filter(filled).length, threshold, done)) : ''}`;
+  </ol>${threshold ? quorumRule(people.filter(filled).length, threshold, { done, refused: refusedRule }) : ''}`;
 }
 
-function quorumRule(n, t, done = false) {
+function quorumRule(n, t, { done = false, refused: no = false } = {}) {
+  if (no) return `<p class="quorum__rule"><span class="quorum__count">${n} signed</span>, ${t} needed. Platform refused it; see below.</p>`;
   if (done) return `<p class="quorum__rule"><span class="quorum__count">${n} signed</span>. Done on Platform.</p>`;
   return `<p class="quorum__rule"><span class="quorum__count">${n} signed</span>, ${t} needed.${n >= t ? ' Enough to go ahead.' : ` ${t - n} more to go.`}</p>`;
 }
@@ -271,6 +272,7 @@ function membersView() {
       ${!ceremony() && !readOnly() ? `<button class="dh-btn${allChecked ? ' dh-btn--primary' : ''}" data-action="view" data-view="keys">${allChecked ? 'Continue to group keys' : 'Continue without checking'}</button>` : ''}
       <button class="dh-btn" data-action="copy-invite">Copy invite link</button>
     </div>
+    <p class="note">If a fingerprint doesn't match, stop here. Ask that member to read it again; if it still differs, someone else may have joined under their name, so start a new group without them.</p>
     ${!allChecked ? `<p class="note" id="fp-note"><strong>${list.filter((m) => !m.me && !verified.has(m.authPub)).length} of ${list.length - 1} fingerprints left to check.</strong> Accepting the key ceremony asks for every one of them.</p>` : ''}`}
     ${me ? '' : '<p class="note">You have not joined this group yet.</p>'}
     ${platform.hosted ? networkPanel() : ''}
@@ -408,16 +410,16 @@ function proposalCard(p, { focus = false } = {}) {
     return { r, c, people };
   });
   const first = reqs[0];
-  const failed = p.broadcasts.some((b) => !b.ok);
+  const failed = refused(p);
   const execute = !readOnly() && p.status === 'ready' && !replaced(p) && (p.type !== 'identity-create' || p.proposer === mine?.name);
   return `<article class="proposal proposal--${esc(p.status)}${focus ? ' proposal--focus' : ''}">
     <header class="proposal__head">
-      <h3 class="proposal__title">${esc(KINDS[p.type]?.title ?? (p.type === 'identity-create' ? 'Create the identity' : p.type))}</h3>
+      <h3 class="proposal__title">${esc(titleOf(p.type))}</h3>
       ${statusBadge(p)}
     </header>
     <p class="proposal__meta">Proposed by ${esc(p.proposer)} ${esc(ago(p.at))}${p.note ? `. ${esc(p.note)}` : ''}</p>
     ${facts(p.intent) || `<ul class="proposal__summary">${p.summary.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>`}
-    ${first ? seats(first.people, { threshold: first.r.threshold, done: p.status === 'executed', refused: p.status === 'ready' && p.broadcasts.some((b) => !b.ok), filled: (x) => first.r.approvals.includes(x.index), label: (x) => (first.r.approvals.includes(x.index) ? 'signed' : '') }) : ''}
+    ${first ? seats(first.people, { threshold: first.r.threshold, done: p.status === 'executed', refused: p.status === 'ready' && refused(p), filled: (x) => first.r.approvals.includes(x.index), label: (x) => (first.r.approvals.includes(x.index) ? 'signed' : '') }) : ''}
     ${reqs.length > 1 && p.status !== 'executed' ? `<p class="note">Needs signatures for ${reqs.length} keys; the count above is for the ${esc(SLOT_NAMES[first.r.slot] ?? first.r.slot)}.</p>` : ''}
     ${p.rejections.map((r) => `<p class="dh-notice dh-notice--warn">${esc(r.by)} rejected it: ${esc(r.reason || 'no reason given')}</p>`).join('')}
     ${replaced(p) ? '<p class="note">Another proposal used the same nonce and went through, so this one can no longer be sent.</p>' : p.status === 'executed' ? '' : p.broadcasts.filter((b) => !b.ok).slice(-1).map((b) => `<div class="dh-notice dh-notice--error"><p>${esc(b.by)} tried to send it, and Platform refused: ${esc(plainError(b.error))}</p><details><summary>What Platform said</summary><pre>${esc(b.error)}</pre></details></div>`).join('')}
@@ -478,16 +480,18 @@ function plainError(text) {
   return String(text).split(/\n|\| /).filter(Boolean).at(-1)?.slice(0, 200) ?? String(text);
 }
 
-const replaced = (p) => p.status === 'ready' && p.broadcasts.some((b) => !b.ok) && p.intent && proposals().some((q) => q !== p && q.status === 'executed' && q.intent?.nonce !== undefined && q.intent?.nonce === p.intent.nonce && (q.intent?.identityId ?? q.intent?.ownerId) === (p.intent.identityId ?? p.intent.ownerId));
+const titleOf = (type) => KINDS[type]?.title ?? (type === 'identity-create' ? 'Create the identity' : type);
+const refused = (p) => p.broadcasts.some((b) => !b.ok);
+const replaced = (p) => p.status === 'ready' && refused(p) && p.intent && proposals().some((q) => q !== p && q.status === 'executed' && q.intent?.nonce !== undefined && q.intent?.nonce === p.intent.nonce && (q.intent?.identityId ?? q.intent?.ownerId) === (p.intent.identityId ?? p.intent.ownerId));
 
 function doneRow(p) {
   const f = p.intent?.amount ? ` ${dashOfCredits(p.intent.amount)} ${platform.unit ?? unit(identity()?.network)}` : '';
-  return `<details class="done-row"><summary><span class="done-row__title">${esc(KINDS[p.type]?.title ?? (p.type === 'identity-create' ? 'Create the identity' : p.type))}${esc(f)}</span><span class="muted">${esc(ago(p.at))}, proposed by ${esc(p.proposer)}</span>${replaced(p) ? '<span class="dh-badge dh-badge--outline">replaced</span>' : '<span class="dh-badge dh-badge--good">done</span>'}</summary>${proposalCard(p)}</details>`;
+  return `<details class="done-row"><summary><span class="done-row__title">${esc(titleOf(p.type))}${esc(f)}</span><span class="muted">${esc(ago(p.at))}, proposed by ${esc(p.proposer)}</span>${replaced(p) ? '<span class="dh-badge dh-badge--outline">replaced</span>' : '<span class="dh-badge dh-badge--good">done</span>'}</summary>${proposalCard(p)}</details>`;
 }
 
 function statusBadge(p) {
   const map = {
-    executed: ['good', 'done'], ready: p.broadcasts.some((b) => !b.ok) ? ['bad', 'refused by Platform'] : ['info', 'ready to broadcast'], collecting: [canSign(p) ? 'warn' : 'info', canSign(p) ? 'needs your signature' : p.approvedByMe ? 'you signed' : 'collecting signatures'],
+    executed: ['good', 'done'], ready: refused(p) ? ['bad', 'refused by Platform'] : ['info', 'ready to broadcast'], collecting: [canSign(p) ? 'warn' : 'info', canSign(p) ? 'needs your signature' : p.approvedByMe ? 'you signed' : 'collecting signatures'],
     invalid: ['bad', 'invalid'], failed: ['bad', 'failed'],
   };
   const [tone, text] = map[p.status] ?? ['info', p.status];
@@ -500,8 +504,8 @@ function proposalsView() {
   const list = proposals().filter((p) => p.type !== 'identity-create' || p.status === 'executed').slice().reverse();
   const groups = [
     ['Needs your signature', list.filter(canSign)],
-    ['Ready to broadcast', list.filter((p) => p.status === 'ready' && !p.broadcasts.some((b) => !b.ok))],
-    ['Refused by Platform', list.filter((p) => p.status === 'ready' && p.broadcasts.some((b) => !b.ok) && !replaced(p))],
+    ['Ready to broadcast', list.filter((p) => p.status === 'ready' && !refused(p))],
+    ['Refused by Platform', list.filter((p) => p.status === 'ready' && refused(p) && !replaced(p))],
     ['Waiting for others', list.filter((p) => p.status === 'collecting' && !canSign(p))],
     ['Done', list.filter((p) => p.status === 'executed' || replaced(p))],
     ['Rejected or invalid', list.filter((p) => ['invalid', 'failed'].includes(p.status))],
@@ -509,7 +513,7 @@ function proposalsView() {
   return `<section class="step">
     <div class="step__head"><h2 class="step__title">Proposals</h2>${readOnly() || view === 'new' ? '' : '<button class="dh-btn dh-btn--primary" data-action="new-proposal">New proposal</button>'}</div>
     ${readOnly() ? readOnlyNote() : ''}
-    <p class="step__lede">Everything the identity does starts as a proposal. Each signer's page rebuilds the transaction from what the proposal says before signing, so nobody can sign something other than what they read.</p>
+    <p class="step__lede">Everything the identity does starts as a proposal. Before you sign, your page rebuilds the transaction from the proposal and checks that it is exactly what the proposal shows. Whether the payment itself is right is for the group to agree.</p>
     ${view === 'new' ? newProposal(id) : ''}
     ${groups.length ? groups.map(([title, items]) => `<h3 class="group-title">${esc(title)} <span class="count">${items.length}</span></h3>${items.map((p) => (title === 'Done' ? doneRow(p) : proposalCard(p))).join('')}`).join('')
       : view === 'new' ? '' : '<div class="empty"><p class="empty__title">No proposals yet</p><p>Propose sending credits, writing a document or anything else the identity should do. The others see it here and sign.</p></div>'}
@@ -576,7 +580,7 @@ function morph(root, html) {
     if (!el.id || el.type === 'file' || el.type === 'hidden') continue;
     keep.set(el.id, el.type === 'checkbox' ? { checked: el.checked } : { value: el.value });
   }
-  const open = new Set([...root.querySelectorAll('details[id], details')].map((d, i) => (d.open ? d.id || `#${i}` : null)).filter(Boolean));
+  const open = new Set([...root.querySelectorAll('details')].map((d, i) => (d.open ? d.id || `#${i}` : null)).filter(Boolean));
   const focus = document.activeElement && root.contains(document.activeElement) ? { id: document.activeElement.id, start: document.activeElement.selectionStart, end: document.activeElement.selectionEnd } : null;
   root.innerHTML = html;
   for (const [id, v] of keep) {
@@ -606,7 +610,7 @@ dialog.addEventListener('click', (e) => {
 });
 
 function reviewDialog(r, offerSign) {
-  const title = KINDS[r.intent?.type]?.title ?? (r.intent?.type === 'identity-create' ? 'Create the identity' : r.intent?.type);
+  const title = titleOf(r.intent?.type);
   showDialog(`
     <header class="dlg__head"><h2 class="dlg__title">${esc(title)}</h2>${r.status === 'executed' ? '<span class="dh-badge dh-badge--good">already done</span>' : r.ok ? '<span class="dh-badge dh-badge--info">matches the proposal</span>' : '<span class="dh-badge dh-badge--bad">do not sign</span>'}</header>
     <p class="dlg__lede">Proposed by ${esc(r.proposer)}${r.proposal?.note ? `, with the note "${esc(r.proposal.note)}"` : ''}.</p>
@@ -631,6 +635,8 @@ function reviewDialog(r, offerSign) {
 }
 
 /* ---------------------------------------------------------------- events */
+
+const enteredGroup = () => { view = null; picking = false; funding = null; platform.invite = null; };
 
 function formData(form) {
   return Object.fromEntries(new FormData(form).entries());
@@ -668,10 +674,10 @@ document.addEventListener('submit', (e) => {
   const f = formData(form);
   switch (form.dataset.form) {
     case 'create':
-      act('Start group', () => api('POST', '/api/room/create', { label: f.label, name: f.name, relay: f.relay || undefined }), { done: 'Group started. Copy the invite link for the others.' }).then(() => { view = null; picking = false; funding = null; platform.invite = null; });
+      act('Start group', () => api('POST', '/api/room/create', { label: f.label, name: f.name, relay: f.relay || undefined }), { done: 'Group started. Copy the invite link for the others.' }).then(enteredGroup);
       break;
     case 'join':
-      act('Join group', () => api('POST', '/api/room/join', { room: roomFromInvite(f.room), name: f.name, relay: f.relay || undefined, label: platform.inviteLabel ?? labelFromInvite(f.room) }), { done: 'Joined the group' }).then(() => { view = null; picking = false; funding = null; platform.invite = null; });
+      act('Join group', () => api('POST', '/api/room/join', { room: roomFromInvite(f.room), name: f.name, relay: f.relay || undefined, label: platform.inviteLabel ?? labelFromInvite(f.room) }), { done: 'Joined the group' }).then(enteredGroup);
       break;
     case 'ceremony': {
       const chosen = [...form.querySelectorAll('input[name=member]:checked')].map((x) => x.value);

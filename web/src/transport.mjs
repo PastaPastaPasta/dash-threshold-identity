@@ -1,6 +1,5 @@
 import { routes } from '../../src/ui/routes.mjs';
 import { jsonReplacer } from '../../src/util.mjs';
-import { importBundle } from '../../src/store.mjs';
 import { network as networkOf } from '../../src/networks.mjs';
 
 export const platform = { hosted: true, network: 'testnet', networks: ['testnet'], relayField: false, readOnly: false, invite: null, inviteUrl: (room, label) => `${location.origin}/?network=${encodeURIComponent(platform.network)}#room=${room}${label ? `&name=${encodeURIComponent(label)}` : ''}` };
@@ -9,7 +8,8 @@ let table = null;
 let queue = Promise.resolve();
 
 export function attach(session) {
-  Object.assign(platform, { network: session.network, networks: [session.network], readOnly: session.readOnly, unit: networkOf(session.network).unit, label: networkOf(session.network).label });
+  const n = networkOf(session.network);
+  Object.assign(platform, { network: n.id, networks: [n.id], readOnly: session.readOnly, unit: n.unit, label: n.label });
   const base = routes(session);
   const pinned = (route, fix) => async (b) => base[route]({ ...b, ...fix });
   table = {
@@ -19,12 +19,7 @@ export function attach(session) {
     'POST /api/room/create': pinned('POST /api/room/create', { relay: session.relay }),
     'POST /api/room/join': pinned('POST /api/room/join', { relay: session.relay }),
     'GET /api/room/export': base['GET /api/room/export'],
-    'POST /api/room/import': async (b) => {
-      session.checkRoom(b?.room);
-      const { data, added } = importBundle(b);
-      session.data = data;
-      return { room: data.room, added };
-    },
+    'POST /api/room/import': async (b) => { session.checkRoom(b?.room); return base['POST /api/room/import'](b); },
     'POST /api/ceremony/propose': pinned('POST /api/ceremony/propose', { network: session.network }),
     'POST /api/ceremony/advance': base['POST /api/ceremony/advance'],
     'GET /api/funding': pinned('GET /api/funding', { network: session.network }),

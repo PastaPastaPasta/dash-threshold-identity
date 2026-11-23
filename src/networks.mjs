@@ -24,7 +24,7 @@ export function network(id) {
         ? { kind: 'devnet', label: `Devnet ${devnet}`, devnet, coin: 1, core: 'testnet', insight: `https://insight.${devnet}.networks.dash.org/insight-api`, quorums: `https://quorums.${devnet}.networks.dash.org` }
         : { kind: 'local', label: 'Local', coin: 1, core: 'regtest', insight: env('DTI_LOCAL_INSIGHT') ?? 'http://127.0.0.1:3001/insight-api', quorums: env('DTI_LOCAL_QUORUMS') ?? 'http://127.0.0.1:22444', addresses: env('DTI_LOCAL_DAPI')?.split(',') };
   const insight = id === 'local' ? o.insight ?? base.insight : env('DTI_INSIGHT_URL') ?? o.insight ?? base.insight;
-  return { id, real: base.kind === 'mainnet', unit: base.kind === 'mainnet' ? 'DASH' : 'tDASH', ...base, ...o, insight };
+  return { id, unit: base.kind === 'mainnet' ? 'DASH' : 'tDASH', ...base, ...o, insight };
 }
 
 export function sdkFor(evo, id, settings) {

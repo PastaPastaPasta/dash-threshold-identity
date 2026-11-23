@@ -53,9 +53,11 @@ function setupNetwork() {
 
 const net = setupNetwork();
 
+const go = (id) => location.assign(`${location.pathname}?network=${encodeURIComponent(id)}`);
+
 $('dashhq-bar').addEventListener('dashhq-network', (e) => {
   e.preventDefault();
-  location.assign(`${location.pathname}?network=${encodeURIComponent(e.detail.network)}`);
+  go(e.detail.network);
 });
 
 $('#devnet-form').onsubmit = (e) => {
@@ -65,7 +67,7 @@ $('#devnet-form').onsubmit = (e) => {
     $('#devnet-error').hidden = false;
     return;
   }
-  location.assign(`${location.pathname}?network=devnet-${encodeURIComponent(name)}`);
+  go(`devnet-${name}`);
 };
 
 $('#unlock-generate').onclick = () => {

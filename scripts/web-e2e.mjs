@@ -59,7 +59,8 @@ async function toast(m) {
 async function failIfToastBad(m, what) {
   if (await m.page.locator('#toast.toast--bad:not([hidden])').count()) throw new Error(`${m.name} ${what}: ${await toast(m)}`);
 }
-const view = async (m, step) => { await m.page.click(`.rail [data-view=${step}]`); };
+const view = (m, step) => m.page.click(`.rail [data-view=${step}]`);
+const checkAll = async (page, sel) => { while (await page.locator(sel).count()) await page.locator(sel).first().click(); };
 
 async function unlock(m, url = BASE) {
   await m.page.goto(url);
@@ -90,7 +91,7 @@ for (const m of [b, c]) {
   log(m.name, 'joined');
 }
 await until(a.page, () => document.querySelectorAll('.person').length === 3, null, 60000);
-while (await a.page.locator('[data-action=verify]:not(:checked)').count()) await a.page.locator('[data-action=verify]:not(:checked)').first().click();
+await checkAll(a.page, '[data-action=verify]:not(:checked)');
 await shot(a, 'members');
 
 await a.page.click('[data-action=view][data-view=keys]');
@@ -100,7 +101,7 @@ await idle(a.page);
 for (const m of members) {
   if (m !== a) await view(m, 'keys');
   await m.page.waitForSelector('#form-accept', { timeout: 60000 });
-  while (await m.page.locator('#form-accept input[name=fp]:not(:checked)').count()) await m.page.locator('#form-accept input[name=fp]:not(:checked)').first().click();
+  await checkAll(m.page, '#form-accept input[name=fp]:not(:checked)');
   await m.page.click('#form-accept button');
   await idle(m.page);
   await failIfToastBad(m, 'accept');
