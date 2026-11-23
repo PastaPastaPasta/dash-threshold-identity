@@ -80,9 +80,9 @@ It covers rooms and bundles, fingerprints, ceremonies, funding, proposals with t
 
 ### The hosted app
 
-`web/` builds the same UI into a page that runs entirely in the browser, with the relay on the same origin, deployed at https://new-multisig.dashhq.org. It works on Testnet, devnets and a Local dashmate network; Mainnet is read only until it has been signed off. The seed phrase stays in the tab's memory. See [docs/HOSTED.md](docs/HOSTED.md) for how it reuses `src/`, the testnet lock and the risks of serving it from a public domain.
+`web/` builds the same UI into a page that runs entirely in the browser, with the relay on the same origin, deployed at https://new-multisig.dashhq.org. It works on Testnet, devnets and a Local dashmate network; Mainnet is read only until it has been signed off. The seed phrase stays in the tab's memory. See [docs/HOSTED.md](docs/HOSTED.md) for how it reuses `src/`, the network checks and the risks of serving it from a public domain.
 
-The build is reproducible. Every served file except `index.html` is listed with its SHA-256 in `build-manifest.txt`; `index.html` carries that manifest's hash (the bundle hash, shown on the page), so the hash of `index.html` covers the whole site. Page hash of this commit: `2de46f00920df5c346ed2d1200023c6fdcd4dee2f644b0bc4b4d060bf99c5994`. To check that the live site serves exactly this source, see [docs/VERIFY.md](docs/VERIFY.md). What a mainnet build would need is in [docs/MAINNET-SIGNOFF.md](docs/MAINNET-SIGNOFF.md).
+The build is reproducible. Every served file except `index.html` is listed with its SHA-256 in `build-manifest.txt`; `index.html` carries that manifest's hash (the bundle hash, shown on the page), so the hash of `index.html` covers the whole site. Page hash of this commit: `d1f774e71dabf4ac542391398ab6ea8e47bec655b0af4c9aafecb159fb613ce7`. To check that the live site serves exactly this source, see [docs/VERIFY.md](docs/VERIFY.md). What a mainnet build would need is in [docs/MAINNET-SIGNOFF.md](docs/MAINNET-SIGNOFF.md).
 
 ## The relay
 

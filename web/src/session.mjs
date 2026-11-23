@@ -73,6 +73,11 @@ export class NetworkSession extends Session {
     return found;
   }
 
+  async prepare(kind, args) {
+    this.writable('Proposing');
+    return super.prepare(kind, args);
+  }
+
   async propose(network, intent, note) {
     this.writable('Proposing');
     this.onNetwork(network, 'this proposal');

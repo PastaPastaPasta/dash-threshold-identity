@@ -21,7 +21,7 @@ An optional BIP39 passphrase comes from DTI_PASSPHRASE or --passphrase-file.
   dti status [--json]                          members, ceremonies, identities, proposals
   dti sync
 
-  dti ceremony propose --network testnet|mainnet --threshold T --label L [--members a,b,..] [--keys FILE]
+  dti ceremony propose --network mainnet|testnet|devnet-NAME|local --threshold T --label L [--members a,b,..] [--keys FILE]
   dti ceremony advance [--cid C] [--yes]       take the next step of the key ceremony
   dti ceremony run [--cid C] [--yes]           keep stepping until the keys exist
   dti ceremony show [--cid C]

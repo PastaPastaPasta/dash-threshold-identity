@@ -1,6 +1,6 @@
 import { assert } from './util.mjs';
 
-const DEVNET = /^devnet-([a-z0-9][a-z0-9-]{0,30})$/;
+const DEVNET = /^devnet-(?!(?:mainnet|testnet|local|regtest|devnet)$)([a-z0-9][a-z0-9-]{0,27})$/;
 const overrides = new Map();
 
 export const isNetwork = (id) => id === 'mainnet' || id === 'testnet' || id === 'local' || DEVNET.test(String(id));

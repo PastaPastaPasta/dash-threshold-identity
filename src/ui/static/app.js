@@ -71,8 +71,10 @@ async function act(label, fn, { pending, done } = {}) {
   }
 }
 
+const big = (v) => { try { return BigInt(v ?? 0); } catch { return null; } };
 const dashOfCredits = (credits) => {
-  const c = BigInt(credits ?? 0);
+  const c = big(credits);
+  if (c === null) return '?';
   const whole = c / CREDITS_PER_DASH;
   const frac = (c % CREDITS_PER_DASH).toString().padStart(11, '0').replace(/0+$/, '');
   return frac ? `${whole}.${frac.slice(0, 8)}` : `${whole}`;
@@ -92,14 +94,15 @@ const ago = (iso) => {
 
 const members = () => state?.members ?? [];
 const myself = () => members().find((m) => m.me) ?? null;
-const ceremonies = () => state?.ceremonies ?? [];
+const onPage = (network) => !platform.hosted || network === platform.network;
+const ceremonies = () => (state?.ceremonies ?? []).filter((c) => onPage(c.network));
 const ceremony = () => {
   const list = ceremonies();
   return list.filter((c) => c.status === 'complete').at(-1) ?? list.filter((c) => c.status !== 'failed').at(-1) ?? list.at(-1) ?? null;
 };
 const ceremonyOf = (key) => ceremonies().find((c) => c.cid === key.split('/')[0]) ?? null;
-const identity = () => (state?.identities ?? []).at(-1) ?? null;
-const proposals = () => state?.proposals ?? [];
+const identity = () => (state?.identities ?? []).filter((i) => onPage(i.network)).at(-1) ?? null;
+const proposals = () => (state?.proposals ?? []).filter((p) => onPage(p.network));
 const identityProposal = () => proposals().filter((p) => p.type === 'identity-create' && p.status !== 'invalid').at(-1) ?? null;
 const canSign = (p) => p.status === 'collecting' && !p.approvedByMe && p.requirements.some((r) => ceremonyOf(r.key)?.myIndex);
 const groupName = () => {
@@ -301,7 +304,7 @@ function keysView() {
       ${readOnly() ? readOnlyNote() : list.length < 2 ? `<div class="empty"><p class="empty__title">Waiting for members</p><p>A key ceremony needs at least two members. Invite the others first.</p><div class="dh-actions"><button class="dh-btn dh-btn--primary" data-action="copy-invite">Copy invite link</button></div></div>` : `
       <form class="panel" id="form-ceremony" data-form="ceremony">
         <fieldset class="dh-fieldset"><legend class="dh-field__label">Who holds a share</legend>
-          <div class="picks">${list.map((m) => `<label class="dh-check"><input type="checkbox" name="member" value="${esc(m.authPub)}" checked> ${esc(m.name)}</label>`).join('')}</div>
+          <div class="picks">${list.map((m) => `<label class="dh-check"><input type="checkbox" id="cm-${esc(m.authPub.slice(0, 24))}" name="member" value="${esc(m.authPub)}" checked> ${esc(m.name)}</label>`).join('')}</div>
         </fieldset>
         <div class="dh-field">
           <label class="dh-field__label" for="ceremony-threshold">Signatures needed</label>
@@ -380,7 +383,7 @@ function identityView() {
     ${proposalCard(ip, { focus: true })}</section>`;
   const net = c.network;
   const f = funding;
-  const enough = f && f.duffs >= 0.5 * DUFFS_PER_DASH + 20000;
+  const enough = f && f.duffs > 120000;
   return `<section class="step">
     <h2 class="step__title">Fund and create the identity</h2>
     <p class="step__lede">One member pays for the identity by locking ${unit(net)} from their own address. It becomes the identity's starting balance. Any member can do this; the others then sign.</p>
@@ -391,13 +394,13 @@ function identityView() {
         : `<div class="dh-loading" role="status"><span class="dh-spin" aria-hidden="true"></span>Reading your address and balance…</div>`}
       ${net === 'testnet' ? '<p><a class="dh-link" href="https://faucet.dashhq.org/?network=testnet" target="_blank" rel="noopener noreferrer">Get testnet DASH from the faucet ↗</a> Paste your address there, then refresh.</p>' : ''}
     </div>
-    <form class="panel" id="form-identity-create" data-form="identity">
+    ${readOnly() ? readOnlyNote() : `<form class="panel" id="form-identity-create" data-form="identity">
       <div class="dh-field"><label class="dh-field__label" for="fund-amount">Amount to lock</label>
         <div class="dh-input-group"><input class="dh-input" id="fund-amount" name="amount" inputmode="decimal" value="0.5" required><span class="dh-input-group__addon">${unit(net)}</span></div>
         <p class="dh-field__help">Creating the identity costs about 0.001 ${unit(net)}; the rest stays as its balance. A small network fee is added.</p></div>
-      ${readOnly() ? readOnlyNote() : `<div class="dh-actions"><button class="dh-btn dh-btn--primary"${f && !enough ? ' disabled aria-describedby="fund-why"' : ''}>Lock and propose the identity</button>${f && !enough ? `<span class="dh-actions__note" id="fund-why">Waiting for at least 0.5002 ${unit(net)} at your address.</span>` : ''}</div>`}
+      <div class="dh-actions"><button class="dh-btn dh-btn--primary"${f && !enough ? ' disabled aria-describedby="fund-why"' : ''}>Lock and propose the identity</button>${f && !enough ? `<span class="dh-actions__note" id="fund-why">Waiting for ${unit(net)} at your address.</span>` : ''}</div>
       <p class="note">This takes one to three minutes while the network confirms the lock. Keep this page open.</p>
-    </form>
+    </form>`}
   </section>`;
 }
 
@@ -432,13 +435,21 @@ function proposalCard(p, { focus = false } = {}) {
   </article>`;
 }
 
-const creditsLine = (c) => `${dashOfCredits(c)} ${platform.unit ?? unit(identity()?.network ?? ceremony()?.network)} <span class="muted">(${esc(BigInt(c ?? 0).toLocaleString('en-US'))} credits)</span>`;
+const creditsLine = (c) => `${esc(dashOfCredits(c))} ${platform.unit ?? unit(identity()?.network ?? ceremony()?.network)} <span class="muted">(${esc(big(c)?.toLocaleString('en-US') ?? String(c))} credits)</span>`;
 const idLabel = (id) => {
   const ours = (state?.identities ?? []).some((x) => x.identityId === id);
   return `<code class="wrap">${esc(id)}</code> ${ours ? '<span class="dh-badge dh-badge--info">this group</span>' : '<span class="dh-badge dh-badge--outline">not one of this group\'s identities</span>'}`;
 };
 
-function facts(intent, { full = false } = {}) {
+function facts(intent, options) {
+  try {
+    return factsOf(intent, options);
+  } catch {
+    return '';
+  }
+}
+
+function factsOf(intent, { full = false } = {}) {
   if (!intent || typeof intent !== 'object') return '';
   const rows = [];
   const key = intent.signer ? `${esc(SLOT_NAMES[intent.signer.slot] ?? intent.signer.slot)} #${Number(intent.signer.keyId)}` : null;
@@ -485,8 +496,8 @@ const refused = (p) => p.broadcasts.some((b) => !b.ok);
 const replaced = (p) => p.status === 'ready' && refused(p) && p.intent && proposals().some((q) => q !== p && q.status === 'executed' && q.intent?.nonce !== undefined && q.intent?.nonce === p.intent.nonce && (q.intent?.identityId ?? q.intent?.ownerId) === (p.intent.identityId ?? p.intent.ownerId));
 
 function doneRow(p) {
-  const f = p.intent?.amount ? ` ${dashOfCredits(p.intent.amount)} ${platform.unit ?? unit(identity()?.network)}` : '';
-  return `<details class="done-row"><summary><span class="done-row__title">${esc(titleOf(p.type))}${esc(f)}</span><span class="muted">${esc(ago(p.at))}, proposed by ${esc(p.proposer)}</span>${replaced(p) ? '<span class="dh-badge dh-badge--outline">replaced</span>' : '<span class="dh-badge dh-badge--good">done</span>'}</summary>${proposalCard(p)}</details>`;
+  const f = typeof p.intent?.amount === 'string' ? ` ${dashOfCredits(p.intent.amount)} ${platform.unit ?? unit(identity()?.network)}` : '';
+  return `<details class="done-row" id="done-${esc(p.id.slice(0, 16))}"><summary><span class="done-row__title">${esc(titleOf(p.type))}${esc(f)}</span><span class="muted">${esc(ago(p.at))}, proposed by ${esc(p.proposer)}</span>${replaced(p) ? '<span class="dh-badge dh-badge--outline">replaced</span>' : '<span class="dh-badge dh-badge--good">done</span>'}</summary>${proposalCard(p)}</details>`;
 }
 
 function statusBadge(p) {
@@ -552,7 +563,7 @@ function newProposal(id) {
     <div class="dh-choices kinds">${Object.entries(KINDS).map(([key, v]) => `<button type="button" class="dh-choice" data-action="kind" data-kind="${key}" aria-pressed="${key === kind}"><span class="dh-choice__title">${esc(v.title)}</span><span class="dh-choice__desc">${esc(v.desc)}</span></button>`).join('')}</div>
     ${fields[kind]}
     ${field('note', 'Note for the group <span class="dh-field__optional">optional</span>', '', 'autocomplete="off"')}
-    <details class="dh-disclosure"><summary><span>Signing key</span></summary>${field('signer', 'Key', `Defaults to the ${esc(SLOT_NAMES[k.slot])}, which Platform requires for this.`, `value="${esc(k.slot)}" autocomplete="off"`)}</details>
+    <details class="dh-disclosure"><summary><span>Signing key</span></summary>${field(`signer-${kind}`, 'Key', `Defaults to the ${esc(SLOT_NAMES[k.slot])}, which Platform requires for this.`, `value="${esc(k.slot)}" autocomplete="off"`)}</details>
     <div class="dh-actions"><button class="dh-btn dh-btn--primary">Propose to the group</button><button type="button" class="dh-btn dh-btn--quiet" data-action="cancel-new">Cancel</button></div>
     <p class="note">For ${esc(short(id.identityId, 12))}. Nothing happens until enough members sign and someone broadcasts it.</p>
   </form>`;
@@ -580,7 +591,7 @@ function morph(root, html) {
     if (!el.id || el.type === 'file' || el.type === 'hidden') continue;
     keep.set(el.id, el.type === 'checkbox' ? { checked: el.checked } : { value: el.value });
   }
-  const open = new Set([...root.querySelectorAll('details')].map((d, i) => (d.open ? d.id || `#${i}` : null)).filter(Boolean));
+  const open = new Map([...root.querySelectorAll('details[id]')].map((d) => [d.id, d.open]));
   const focus = document.activeElement && root.contains(document.activeElement) ? { id: document.activeElement.id, start: document.activeElement.selectionStart, end: document.activeElement.selectionEnd } : null;
   root.innerHTML = html;
   for (const [id, v] of keep) {
@@ -589,7 +600,7 @@ function morph(root, html) {
     if ('checked' in v) el.checked = v.checked;
     else el.value = v.value;
   }
-  [...root.querySelectorAll('details')].forEach((d, i) => { if (open.has(d.id || `#${i}`)) d.open = true; });
+  for (const d of root.querySelectorAll('details[id]')) if (open.has(d.id)) d.open = open.get(d.id);
   if (focus?.id) {
     const el = root.querySelector(`#${CSS.escape(focus.id)}`);
     if (el) {
@@ -615,7 +626,7 @@ function reviewDialog(r, offerSign) {
     <header class="dlg__head"><h2 class="dlg__title">${esc(title)}</h2>${r.status === 'executed' ? '<span class="dh-badge dh-badge--good">already done</span>' : r.ok ? '<span class="dh-badge dh-badge--info">matches the proposal</span>' : '<span class="dh-badge dh-badge--bad">do not sign</span>'}</header>
     <p class="dlg__lede">Proposed by ${esc(r.proposer)}${r.proposal?.note ? `, with the note "${esc(r.proposal.note)}"` : ''}.</p>
     ${facts(r.intent, { full: true }) || `<ul class="proposal__summary">${r.summary.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>`}
-    ${offerSign && r.ok && r.intent?.amount ? `<p class="confirm">Before you sign, confirm with ${esc(r.proposer)} that the group agreed to send <strong>${esc(dashOfCredits(r.intent.amount))} ${esc(platform.unit ?? unit(identity()?.network))}</strong> to <code>${esc(short(r.intent.recipientId ?? r.intent.outputAddress, 10))}</code>.</p>` : ''}
+    ${offerSign && r.ok && typeof r.intent?.amount === 'string' ? `<p class="confirm">Before you sign, confirm with ${esc(r.proposer)} that the group agreed to send <strong>${esc(dashOfCredits(r.intent.amount))} ${esc(platform.unit ?? unit(identity()?.network))}</strong> to <code>${esc(short(r.intent.recipientId ?? r.intent.outputAddress, 10))}</code>.</p>` : ''}
     ${r.ok ? `<div class="checks"><p><strong>What your page checked</strong></p><ul>
       <li>It rebuilt the transaction from the proposal above, and the bytes to sign are exactly those.</li>
       <li>The signing key is the group's own key, with the level Platform requires for this.</li>
@@ -636,7 +647,7 @@ function reviewDialog(r, offerSign) {
 
 /* ---------------------------------------------------------------- events */
 
-const enteredGroup = () => { view = null; picking = false; funding = null; platform.invite = null; };
+const enteredGroup = () => { view = null; picking = false; funding = null; platform.invite = null; platform.inviteLabel = null; };
 
 function formData(form) {
   return Object.fromEntries(new FormData(form).entries());
@@ -708,7 +719,7 @@ document.addEventListener('submit', (e) => {
       break;
     }
     case 'propose': {
-      const args = { identityId: identity()?.identityId, note: f.note, signer: f.signer || KINDS[kind].slot };
+      const args = { identityId: identity()?.identityId, note: f.note, signer: f[`signer-${kind}`] || KINDS[kind].slot };
       try {
         if (kind === 'contract-create' || kind === 'contract-update') { const c = JSON.parse(f.contract); args.contract = c.documentSchemas ? c : { documentSchemas: c }; }
         if (kind === 'contract-update' || kind === 'document') args.contractId = f.contractId;
@@ -854,19 +865,26 @@ async function refresh() {
   const step = state.room ? (view === 'new' ? 'proposals' : view ?? currentStep(stepStatus())) : null;
   if (step === 'identity' && !funding && ceremony()?.status === 'complete' && !identity()) loadFunding();
   if ((step === 'identity' || step === 'proposals') && identity() && idInfo?.identityId !== identity().identityId && !idLoading) loadIdentity();
-  render();
+  try {
+    render();
+  } catch (e) {
+    say(`Could not show this group: ${e.message}`, 'bad');
+  }
 }
 
 const active = () => ceremonies().some((c) => c.myIndex && !['complete', 'failed'].includes(c.status));
 async function tick() {
-  if (!busy && !dialog.open && state?.room) {
-    try {
-      await api('POST', '/api/sync');
-      await advanceCeremonies();
-    } catch { /* the next tick retries */ }
-    await refresh();
+  try {
+    if (!busy && !dialog.open && state?.room) {
+      try {
+        await api('POST', '/api/sync');
+        await advanceCeremonies();
+      } catch { /* the next tick retries */ }
+      await refresh();
+    }
+  } finally {
+    setTimeout(tick, active() ? 3000 : 8000);
   }
-  setTimeout(tick, active() ? 3000 : 8000);
 }
 
 await refresh();

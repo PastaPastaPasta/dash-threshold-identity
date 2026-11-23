@@ -87,7 +87,7 @@ $('#form-unlock').onsubmit = async (e) => {
   let attach;
   let platform;
   try {
-    if (net.kind === 'local') configureNetwork('local', { insight: $('#local-insight').value.trim(), quorums: $('#local-quorums').value.trim() });
+    if (net.kind === 'local') configureNetwork('local', Object.fromEntries([['insight', $('#local-insight').value.trim()], ['quorums', $('#local-quorums').value.trim()]].filter(([, v]) => v)));
     const [{ NetworkSession }, transport] = await engine;
     attach = transport.attach;
     platform = transport.platform;

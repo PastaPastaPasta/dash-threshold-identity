@@ -45,7 +45,9 @@ test('the browser storage keeps JSON in memory and lists by directory', () => {
 
 test('networks have their own address versions, coin types, explorers and room tags', () => {
   for (const id of ['mainnet', 'testnet', 'local', 'devnet-paloma', 'devnet-a-1']) assert.ok(isNetwork(id), id);
-  for (const id of ['devnet', 'devnet-', 'devnet-UP', 'regtest', 'main', '', null]) assert.ok(!isNetwork(id), String(id));
+  for (const id of ['devnet', 'devnet-', 'devnet-UP', 'regtest', 'main', '', null, 'devnet-mainnet', 'devnet-testnet', 'devnet-local', 'devnet-regtest', `devnet-${'a'.repeat(29)}`]) assert.ok(!isNetwork(id), String(id));
+  assert.ok(isNetwork(`devnet-${'a'.repeat(28)}`));
+  assert.match(`${roomPrefix(`devnet-${'a'.repeat(28)}`)}_${'ab'.repeat(16)}`, /^[A-Za-z0-9_-]{8,64}$/);
   assert.deepEqual([network('mainnet').core, network('mainnet').coin, network('mainnet').unit], ['livenet', 5, 'DASH']);
   assert.deepEqual([network('testnet').core, network('testnet').coin, network('testnet').unit], ['testnet', 1, 'tDASH']);
   assert.equal(network('local').core, 'regtest');
@@ -137,12 +139,22 @@ test('mainnet is read only unless the build turns writes on', async (t) => {
   await assert.rejects(s.topUp({}), off);
   attach(s);
   assert.equal(platform.readOnly, true);
-  await assert.rejects(api('POST', '/api/ceremony/propose', { threshold: 2, label: 'k', members }), off);
+  for (const [route, body] of [['/api/ceremony/propose', { threshold: 2, label: 'k', members }], ['/api/ceremony/advance', { cid: 'x', accept: true }], ['/api/approve', { id: 'x' }], ['/api/execute', { id: 'x' }], ['/api/reject', { id: 'x', reason: 'no' }], ['/api/propose', { kind: 'credit-transfer', args: {} }], ['/api/identity/create', { cid: 'x', duffs: 1000000 }]]) {
+    await assert.rejects(api('POST', route, body), off, route);
+  }
 
   const w = new NetworkSession({ ...phrase, relay, network: 'mainnet', mainnetWrites: true });
   w.useRoom(room);
   await assert.rejects(w.assetLock('mainnet', { duffs: 1000000 }), /confirm it explicitly/);
   await assert.rejects(w.proposeCeremony({ threshold: 2, label: 'k', members }), /at least|threshold|participants|members/i);
+});
+
+test('a hosted page refuses proposals and identities found in a group that belong to another network', (t) => {
+  const s = new NetworkSession({ ...phrase, relay: 'http://relay', network: 'testnet' });
+  t.mock.method(Session.prototype, 'findProposal', () => ({ s: {}, p: { id: 'a'.repeat(64), body: { network: 'mainnet' } } }));
+  t.mock.method(Session.prototype, 'identity', () => ({ identityId: 'X', network: 'devnet-paloma' }));
+  assert.throws(() => s.findProposal('a'), /is on Mainnet, but this page is on Testnet/);
+  assert.throws(() => s.identity('X'), /is on Devnet paloma, but this page is on Testnet/);
 });
 
 test('the base session still accepts any known network for the CLI', () => {
