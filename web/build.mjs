@@ -31,35 +31,7 @@ const replace = (s, from, to) => {
   return s.split(from).join(to);
 };
 
-let html = fs.readFileSync(at('src', 'ui', 'static', 'index.html'), 'utf8');
-const between = (s, start, end) => {
-  const a = s.indexOf(start);
-  const b = s.indexOf(end, a);
-  if (a < 0 || b < 0) throw new Error(`index.html no longer contains ${start} … ${end}`);
-  return s.slice(a, b + end.length);
-};
-const header = between(html, '  <header>', '  </header>\n');
-const tabs = between(header, '<nav id="tabs">', '</nav>');
-html = replace(html, header, fs.readFileSync(at('web', 'static', 'header.html'), 'utf8').replace('<!--TABS-->', tabs.replace('<nav id="tabs">', '<nav id="tabs" slot="nav" aria-label="Multisig" data-unlocked hidden>')));
-html = replace(html, '<title>Threshold Identity</title>', '<title>Multisig (Testnet) · dashhq</title>\n  <meta name="referrer" content="no-referrer">\n  <link rel="icon" href="icon.svg" type="image/svg+xml">');
-html = replace(html, '  <link rel="stylesheet" href="style.css">\n  <script type="module" src="app.js"></script>\n', [
-  '  <script src="dashhq/dashhq-shell.js"></script>',
-  '  <link rel="preload" href="dashhq/fonts/archivo-latin-var.woff2" as="font" type="font/woff2" crossorigin>',
-  '  <link rel="stylesheet" href="dashhq/dashhq-tokens.css">',
-  '  <link rel="stylesheet" href="dashhq/dashhq-shell.css">',
-  '  <link rel="stylesheet" href="dashhq/dashhq-components.css">',
-  '  <link rel="stylesheet" href="style.css">',
-  '  <link rel="stylesheet" href="web.css">',
-  '  <script type="module" src="main.js"></script>',
-  '',
-].join('\n'));
-html = replace(html, '<option>mainnet</option>', '');
-html = replace(html, '            <input name="relay" placeholder="Relay URL (optional; leave empty to exchange files)">\n', '');
-html = replace(html, '            <input name="relay" placeholder="Relay URL (optional)">\n', '');
-html = replace(html, '<body>', '<body class="dh-fill">');
-html = replace(html, '  <main>', `${fs.readFileSync(at('web', 'static', 'unlock.html'), 'utf8')}  <main data-unlocked hidden>\n    <p class="whoami" id="me"></p>`);
-html = replace(html, '<button id="fund-check">Show address and balance</button>', '<button id="fund-check">Show address and balance</button>\n          <a href="https://faucet.dashhq.org/?network=testnet" target="_blank" rel="noopener noreferrer">Get testnet DASH ↗</a>');
-html = replace(html, '</body>', `${fs.readFileSync(at('web', 'static', 'footer.html'), 'utf8')}</body>`);
+let html = fs.readFileSync(at('web', 'static', 'index.html'), 'utf8');
 if (/<option[^>]*>\s*mainnet|value="mainnet"/i.test(html)) throw new Error('the hosted page must not offer mainnet');
 
 const require = createRequire(import.meta.url);

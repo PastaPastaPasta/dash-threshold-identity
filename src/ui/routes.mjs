@@ -14,11 +14,12 @@ export function routes(session) {
       return session.status();
     },
     'POST /api/room/create': async (b) => session.createRoom({ label: b.label, relay: b.relay || undefined, name: b.name }),
-    'POST /api/room/join': async (b) => session.joinRoom({ room: b.room, relay: b.relay || undefined, name: b.name }),
+    'POST /api/room/join': async (b) => session.joinRoom({ room: b.room, relay: b.relay || undefined, name: b.name, label: typeof b.label === 'string' ? b.label.slice(0, 80) : undefined }),
     'GET /api/room/export': async () => exportBundle(loadRoom(session.requireRoom().room)),
     'POST /api/room/import': async (b) => { const { data, added } = importBundle(b); session.data = data; return { room: data.room, added }; },
     'POST /api/ceremony/propose': async (b) => session.proposeCeremony({ network: b.network, threshold: Number(b.threshold), label: b.label, members: b.members, keys: b.keys ?? DEFAULT_KEYS }),
     'POST /api/ceremony/advance': async (b) => session.advanceCeremony(b.cid, { confirm: async () => Boolean(b.accept) }),
+    'GET /api/network': async (b) => session.networkStatus(b.network ?? 'testnet'),
     'GET /api/funding': async (b) => session.fundingBalance(b.network ?? 'testnet'),
     'POST /api/identity/create': async (b) => session.proposeIdentityCreate({ cid: b.cid, duffs: Number(b.duffs), confirmMainnet: b.confirmMainnet === true }),
     'POST /api/identity/topup': async (b) => session.topUp({ identityId: b.identityId, duffs: Number(b.duffs), confirmMainnet: b.confirmMainnet === true }),

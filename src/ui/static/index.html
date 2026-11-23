@@ -3,146 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Threshold Identity</title>
+  <title>Threshold identity (local)</title>
+  <link rel="stylesheet" href="dashhq/dashhq-tokens.css">
+  <link rel="stylesheet" href="dashhq/dashhq-components.css">
   <link rel="stylesheet" href="style.css">
   <script type="module" src="app.js"></script>
 </head>
 <body>
-  <header>
-    <div class="brand">Threshold Identity</div>
-    <div id="me" class="me"></div>
-    <nav id="tabs">
-      <button data-tab="room" class="active">Room</button>
-      <button data-tab="keys">Keys</button>
-      <button data-tab="identity">Identity</button>
-      <button data-tab="proposals">Proposals</button>
-      <button data-tab="new">New proposal</button>
-    </nav>
-  </header>
-  <main>
-    <div id="flash" class="flash" hidden></div>
-
-    <section id="tab-room">
-      <div class="grid">
-        <div class="card">
-          <h2>This room</h2>
-          <div id="room-info" class="muted">No room selected.</div>
-          <div class="row">
-            <select id="room-select"></select>
-            <button id="room-select-go">Open</button>
-            <button id="sync">Sync</button>
-            <button id="export">Export bundle</button>
-            <label class="file">Import bundle<input type="file" id="import" accept="application/json"></label>
-          </div>
-        </div>
-        <div class="card">
-          <h2>Create a room</h2>
-          <form id="form-create-room" class="stack">
-            <input name="label" placeholder="Group name (e.g. Yappr foundation)" required>
-            <input name="name" placeholder="Your name in the group" required>
-            <input name="relay" placeholder="Relay URL (optional; leave empty to exchange files)">
-            <button>Create</button>
-          </form>
-        </div>
-        <div class="card">
-          <h2>Join a room</h2>
-          <form id="form-join-room" class="stack">
-            <input name="room" placeholder="Room id" required>
-            <input name="name" placeholder="Your name in the group" required>
-            <input name="relay" placeholder="Relay URL (optional)">
-            <button>Join</button>
-          </form>
-        </div>
-      </div>
-      <div class="card">
-        <h2>Members</h2>
-        <p class="muted">Read each fingerprint to its owner over a channel you trust (a call, in person) before accepting a key ceremony.</p>
-        <table id="members"></table>
-      </div>
-      <div class="card">
-        <h2>Funding (Core)</h2>
-        <p class="muted">Your Core address comes from your seed phrase. The funder of a new identity locks DASH from it.</p>
-        <div class="row">
-          <select id="fund-network"><option>testnet</option><option>mainnet</option></select>
-          <button id="fund-check">Show address and balance</button>
-        </div>
-        <pre id="fund-out" class="mono"></pre>
-      </div>
-    </section>
-
-    <section id="tab-keys" hidden>
-      <div class="card">
-        <h2>Start a key ceremony</h2>
-        <form id="form-ceremony" class="stack">
-          <div class="row">
-            <label>Network <select name="network"><option>testnet</option><option>mainnet</option></select></label>
-            <label>Threshold <input name="threshold" type="number" min="2" value="3" class="narrow"></label>
-          </div>
-          <input name="label" placeholder="What these keys are for" required>
-          <div id="ceremony-members" class="checks"></div>
-          <details><summary>Key slots (advanced)</summary><textarea name="keys" rows="8" class="mono"></textarea></details>
-          <button>Propose ceremony</button>
-        </form>
-      </div>
-      <div id="ceremonies"></div>
-    </section>
-
-    <section id="tab-identity" hidden>
-      <div class="card">
-        <h2>Create the identity</h2>
-        <p class="muted">The funder locks DASH from their Core address, then proposes the identity. The group signs its keys' proofs of possession, and the funder executes.</p>
-        <form id="form-identity-create" class="row">
-          <select name="cid" id="identity-cid"></select>
-          <input name="duffs" type="number" min="100000" placeholder="Duffs to lock (1 DASH = 100000000)" required>
-          <button>Lock and propose</button>
-        </form>
-      </div>
-      <div id="identities"></div>
-    </section>
-
-    <section id="tab-proposals" hidden>
-      <div id="proposals"></div>
-    </section>
-
-    <section id="tab-new" hidden>
-      <div class="card">
-        <h2>New proposal</h2>
-        <form id="form-propose" class="stack">
-          <div class="row">
-            <label>Kind
-              <select name="kind" id="propose-kind">
-                <option value="contract-create">Register a data contract</option>
-                <option value="contract-update">Update a data contract</option>
-                <option value="document">Create, replace or delete a document</option>
-                <option value="credit-transfer">Transfer credits</option>
-                <option value="credit-withdrawal">Withdraw credits to Core</option>
-                <option value="identity-update">Add or disable identity keys</option>
-              </select>
-            </label>
-            <label>Identity <select name="identityId" id="propose-identity"></select></label>
-            <label>Signing key <input name="signer" placeholder="slot or key id" class="narrow"></label>
-          </div>
-          <div data-kinds="contract-update document"><input name="contractId" placeholder="Contract id"></div>
-          <div data-kinds="contract-create contract-update"><textarea name="contract" rows="10" class="mono" placeholder='{"documentSchemas": {...}}'></textarea></div>
-          <div data-kinds="document" class="row">
-            <input name="documentType" placeholder="Document type">
-            <select name="action"><option>create</option><option>replace</option><option>delete</option></select>
-            <input name="documentId" placeholder="Document id (replace/delete)">
-          </div>
-          <div data-kinds="document"><textarea name="properties" rows="5" class="mono" placeholder='{"message": "hello"}'></textarea></div>
-          <div data-kinds="credit-transfer" class="row"><input name="recipientId" placeholder="Recipient identity"></div>
-          <div data-kinds="credit-withdrawal" class="row"><input name="toAddress" placeholder="Core P2PKH address"></div>
-          <div data-kinds="credit-transfer credit-withdrawal" class="row"><input name="amount" placeholder="Credits (1 DASH = 100000000000)"></div>
-          <div data-kinds="identity-update" class="row">
-            <input name="addKeys" placeholder="Add keys: ceremonyId/slot, comma separated">
-            <input name="disableKeyIds" placeholder="Disable key ids: 0,1">
-          </div>
-          <input name="note" placeholder="Note for the group (optional)">
-          <button>Propose</button>
-        </form>
-      </div>
-    </section>
-  </main>
-  <dialog id="dialog"><div id="dialog-body"></div><div class="row end"><button id="dialog-close">Close</button></div></dialog>
+  <header class="local-head"><strong>Threshold identity</strong> <span class="muted">running on this computer</span></header>
+  <main id="app"></main>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <dialog id="dialog" aria-label="Details"></dialog>
 </body>
 </html>

@@ -2,7 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { bundleManifest, sha256, MANIFEST } from './manifest.mjs';
-import { SECURITY } from './headers.mjs';
+import { securityFor } from './headers.mjs';
+
+const NETWORK_SAMPLES = ['testnet', 'mainnet', 'local', 'devnet-example'];
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.join(root, 'web', 'dist');
@@ -41,8 +43,16 @@ if (arg === '--readme' || arg === '--write-readme') {
   const page = await get('');
   if (!page.bytes.equals(indexHtml)) failures.push(`index.html differs from the local build (live sha256 ${sha256(page.bytes)})`);
   for (const name of UNEXPECTED) if (page.response.headers.has(name)) failures.push(`unexpected header ${name}`);
-  for (const [name, value] of Object.entries(SECURITY)) {
+  for (const [name, value] of Object.entries(securityFor())) {
     if (page.response.headers.get(name) !== value) failures.push(`header ${name} is "${page.response.headers.get(name)}", expected "${value}"`);
+  }
+  for (const network of NETWORK_SAMPLES) {
+    const view = await get(`?network=${network}`);
+    if (!view.bytes.equals(indexHtml)) failures.push(`index.html for ${network} differs from the local build`);
+    for (const name of UNEXPECTED) if (view.response.headers.has(name)) failures.push(`${network}: unexpected header ${name}`);
+    for (const [name, value] of Object.entries(securityFor(network))) {
+      if (view.response.headers.get(name) !== value) failures.push(`${network}: header ${name} is "${view.response.headers.get(name)}", expected "${value}"`);
+    }
   }
   const live = (await get(MANIFEST)).bytes.toString('utf8');
   if (live !== manifest) failures.push(`the live ${MANIFEST} lists different files or hashes`);
@@ -51,7 +61,7 @@ if (arg === '--readme' || arg === '--write-readme') {
     const { bytes } = await get(file);
     if (sha256(bytes) !== hash) failures.push(`${file} differs from the local build`);
   }
-  console.log(`checked ${base}: index.html, ${manifest.trim().split('\n').length} files, ${Object.keys(SECURITY).length} security headers`);
+  console.log(`checked ${base}: index.html, ${manifest.trim().split('\n').length} files, security headers for ${NETWORK_SAMPLES.join(', ')}`);
 }
 
 if (failures.length) {

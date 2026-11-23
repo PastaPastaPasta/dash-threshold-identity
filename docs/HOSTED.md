@@ -1,6 +1,6 @@
-# Hosted testnet web app
+# Hosted web app
 
-`web/` builds the local UI (`src/ui/static`) into a static page that runs every member's side of the protocol in the browser, and a Cloudflare Worker that serves the page and the relay from one origin. It is testnet only.
+`web/` builds the UI (`src/ui/static`) into a static page that runs every member's side of the protocol in the browser, and a Cloudflare Worker that serves the page and the relay from one origin. It works on Mainnet (read only for now), Testnet, any `devnet-<name>`, and a Local dashmate network.
 
 ```sh
 npm run web:build     # web/dist: index.html, the bundle, the vendored dashhq shell
@@ -18,14 +18,16 @@ The page imports `src/` directly: derivation, envelopes, the DKG, the room state
 
 Node built-ins that `@dashevo/dashcore-lib` needs come from `buffer`, `events`, `util`, `assert` and `url`, plus a small `crypto` shim over `@noble/hashes` (`web/src/shims`).
 
-## Testnet lock
+## Networks
 
-Each layer is enough on its own to stop a mainnet action:
+Each page load is on exactly one network, chosen by `?network=` (`mainnet`, `testnet`, `devnet-<name>` or `local`; default `testnet`). Switching networks reloads the page, so nothing from one network stays in memory on another.
 
-1. **The page.** The build removes every `mainnet` option and fails if one is left. No URL parameter or stored setting selects a network.
-2. **The route table.** `transport.mjs` overwrites `network` with `testnet` on ceremony proposals and funding reads, and `confirmMainnet` with `false` on asset locks.
-3. **The session.** `TestnetSession` refuses a ceremony, identity, proposal, Platform connection, funding address or asset lock on any other network. A mainnet ceremony or proposal posted into a room by another member is shown, but this page will not accept, sign or execute it. `test/web.test.mjs` covers each refusal.
-4. **CSP.** `connect-src` allows only this origin, `insight.testnet.networks.dash.org`, `quorums.testnet.networks.dash.org` and HTTPS on port 1443 (testnet evonodes). Mainnet Insight, the mainnet quorum service and mainnet evonodes (port 443) are unreachable from the page even if the code above were bypassed.
+- **Network parameters** come from `src/networks.mjs`: Core address versions (Mainnet `X…`, the test networks `y…`), the BIP44 coin type in key paths (5 on Mainnet, 1 elsewhere), the Insight explorer, and the quorum service. Platform nodes are discovered through each network's quorum service by the SDK (`quorums.mainnet…`, `quorums.testnet…`, `quorums.<name>.networks.dash.org`, or the local dashmate service on port 22444); no DAPI address is built in.
+- **Groups belong to a network.** A group id starts with its network (`m_`, `t_`, `d<name>_`, `r_` for Local). The relay stores each id in its own room, and every signed message names its group, so a message from one network's group cannot be replayed into another. `web/src/session.mjs` refuses to open, join or import a group, or to act on a key ceremony, identity or proposal, that belongs to another network. Group ids from before this change, and groups the CLI or `dti ui` create, have no prefix and open on Testnet only in the hosted page. Devnet names that would read as another network (`devnet-mainnet`, `devnet-testnet`, `devnet-local`, `devnet-regtest`) are refused.
+- **Each network has its own CSP.** The Worker reads `?network=` and sends a `connect-src` for that network: Testnet Insight, the Testnet quorum service and any host on port 1443; Mainnet Insight, the Mainnet quorum service and any host on port 443; a devnet's own Insight and quorum hosts and port 1443; or only this computer for Local. A Testnet page cannot reach Mainnet Insight, the Mainnet quorum service or Mainnet evonodes (port 443). The reverse does not hold: because evonodes are reached by IP, the Mainnet wildcard on port 443 matches any HTTPS host, and Testnet and devnet pages share port 1443. The session checks above, not the CSP, are what keep a page on its network; D6 in [MAINNET-SIGNOFF.md](MAINNET-SIGNOFF.md) tracks narrowing it.
+- **Mainnet is read only in this build.** `web/src/flags.mjs` sets `MAINNET_WRITES = false`. With it off, a Mainnet page can open and join groups, compare fingerprints, check the network and look up balances and identities. It refuses key ceremonies, proposals, signing, rejecting, broadcasting, asset locks, identity creation and top-ups, both in the page and in the session (`test/web.test.mjs`). The flag is part of the bundle, so the bundle hash shows its value; turning it on needs Pasta's sign-off ([MAINNET-SIGNOFF.md](MAINNET-SIGNOFF.md)).
+- **Mainnet looks different.** The network strip is dark with an amber rule and says real DASH, the shell's network pill is solid, and the group title carries a Mainnet badge. Testnet keeps the dashed amber strip; devnets and Local use a grey dotted one.
+- **Local networks** need an Insight-compatible API for funding (the page asks for its URL) and a browser that trusts the dashmate gateway's certificate, which is self-signed by default.
 
 ## Secrets
 
@@ -43,7 +45,8 @@ Each layer is enough on its own to stop a mainnet action:
 - **Supply chain.** The bundle includes `@dashevo/evo-sdk`, `@dashevo/dashcore-lib` and their dependencies, pinned by `package-lock.json`.
 - **Browser exposure.** Extensions, a compromised browser profile, clipboard managers and screen sharing can see the phrase.
 - **Relay abuse.** The relay is public. Per network (an IPv4 address or an IPv6 /64) it allows 600 reads and 60 posts a minute, 10 new rooms a minute, and 16 joins in any one room, so one network cannot use up a room's 256 join slots. A refused join gets a 403 that says why; the member's page keeps re-sending it with each sync, which costs one post every 8 seconds. The Worker keeps the rate counters in memory in a `Limits` Durable Object named after the network, so they reset when that object is evicted or redeployed. Rooms store the join count under a hash of the room id and the network; that hides the address from a casual reader of the room's storage but not from someone who tries every IPv4 address. Sixteen or more networks can still fill a room, and one IPv6 user with a /48 counts as many networks; a room that fills needs to be replaced, which is the trade-off for letting a group behind one NAT join, and the relay cannot forge, alter or read secret messages.
-- **Testnet only.** Losing a testnet phrase loses practice funds. Nothing on this page can move mainnet DASH or credits.
+- **Mainnet.** With the flag off, nothing on this page can make keys, sign, or move Mainnet DASH or credits. A Mainnet page still takes a seed phrase to show a member's fingerprint and balance, so the risks above apply to a phrase typed there.
+- **Mainnet CSP is broad.** Mainnet evonodes answer on port 443 at addresses that change, so the Mainnet `connect-src` includes `https://*:443`, which is any HTTPS host. A changed page on Mainnet could send data anywhere; the Testnet CSP has the same weakness on port 1443. A fixed DAPI gateway on named hosts would close this ([MAINNET-SIGNOFF.md](MAINNET-SIGNOFF.md)).
 
 ## Cloudflare zone settings for this host
 
@@ -60,6 +63,6 @@ The dashhq.org zone has Web Analytics automatic setup on for every host, and Ema
 
 - an independent security review of the browser build and the Worker, and a decision on code-delivery trust (reproducible builds with published hashes, subresource integrity for a pinned release, or a downloadable signed build instead of a live site);
 - a persisted, exportable asset-lock journal so a closed tab can resume or recover a lock, and an explicit mainnet confirmation step in the page like the CLI's `--confirm-mainnet`;
-- the mainnet CSP hosts (mainnet Insight, `quorums.mainnet.networks.dash.org`, evonodes on 443), chosen per build so one build never reaches both networks;
+- a narrower Mainnet CSP than today's (a DAPI gateway on named hosts instead of any host on port 443);
 - a policy for the relay (who runs it, rate limits, retention) and for the domain (a dedicated host, HSTS preload);
 - hardware wallet or external signer support for the funder, so mainnet asset locks need not be built from a seed typed into a page.

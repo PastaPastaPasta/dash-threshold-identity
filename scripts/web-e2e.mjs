@@ -1,191 +1,182 @@
-// Drives a full 2-of-3 run through the hosted page with three browser profiles:
-// a room, a key ceremony, an identity funded by alice (SEEDS/alice.txt must hold tDASH
-// at its funding address), and a credit transfer to RECIPIENT. Needs `npm i --no-save playwright`.
+// Drives a full 2-of-3 run through the hosted page with three browser profiles on one network:
+// start a group, invite and join, check fingerprints, make the keys, fund and create the identity,
+// then send credits. Needs `npm i --no-save playwright`.
+//   BASE      page URL, default https://new-multisig.dashhq.org/
+//   NETWORK   testnet (default), local or devnet-<name>
+//   SEEDS     directory with <name>.txt seed phrases for NAMES (the first one funds the identity)
+//   NAMES     three member names, default ana,ben,cho
+//   KIND      credit-transfer (default) or credit-withdrawal
+//   RECIPIENT identity that receives the credits, or the Core address for a withdrawal
+//   OUT       output directory for screenshots and the log
+//   INSECURE_TLS=1 accepts the self-signed certificates of a local dashmate network
+//   On local, the browser is granted local-network access so a public page can reach 127.0.0.1
 import fs from 'node:fs';
 import { chromium } from 'playwright';
 
-const BASE = process.env.BASE ?? 'https://new-multisig.dashhq.org/';
-const RECIPIENT = process.env.RECIPIENT ?? 'GSv2XVR4yJguY1trogMTZCDNCvc56qc7KYw7cYwRgEQ6';
-const OUT = process.env.OUT ?? 'web-e2e-out';
+const NETWORK = process.env.NETWORK ?? 'testnet';
+const BASE = `${(process.env.BASE ?? 'https://new-multisig.dashhq.org/').replace(/\/?(\?.*)?$/, '/')}?network=${NETWORK}`;
 const SEEDS = process.env.SEEDS ?? 'seeds';
+const NAMES = (process.env.NAMES ?? 'ana,ben,cho').split(',');
+const RECIPIENT = process.env.RECIPIENT;
+const KIND = process.env.KIND ?? 'credit-transfer';
+const OUT = process.env.OUT ?? `web-e2e-out/${NETWORK}`;
+if (!RECIPIENT) throw new Error('set RECIPIENT to an identity id on this network');
 fs.mkdirSync(`${OUT}/shots`, { recursive: true });
 const t0 = Date.now();
 const log = (...a) => { const line = `[${((Date.now() - t0) / 1000).toFixed(0)}s] ${a.join(' ')}`; console.log(line); fs.appendFileSync(`${OUT}/log.txt`, `${line}\n`); };
 
-const MEMBERS = {
-  alice: { viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 },
-  bob: { viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 },
-  carol: { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true },
-};
-
-const pages = {};
-for (const [name, opts] of Object.entries(MEMBERS)) {
+const VIEWS = [
+  { viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 },
+  { viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1, colorScheme: 'dark' },
+  { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true },
+];
+const members = [];
+for (const [i, name] of NAMES.entries()) {
   const dir = `${OUT}/profile-${name}`;
   fs.rmSync(dir, { recursive: true, force: true });
-  const ctx = await chromium.launchPersistentContext(dir, { ...opts, serviceWorkers: 'block', args: process.env.RESOLVE ? [`--host-resolver-rules=${process.env.RESOLVE}`] : [] });
+  const ctx = await chromium.launchPersistentContext(dir, { ...VIEWS[i], serviceWorkers: 'block', ignoreHTTPSErrors: process.env.INSECURE_TLS === '1' });
+  if (NETWORK === 'local') await ctx.grantPermissions(['local-network-access'], { origin: new URL(BASE).origin }).catch(() => {});
   const page = ctx.pages()[0] ?? (await ctx.newPage());
-  page.setDefaultTimeout(180000);
+  page.setDefaultTimeout(240000);
   page.on('pageerror', (e) => log(name, 'PAGEERROR', e.message));
-  page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') log(name, `console.${m.type()}`, m.text().slice(0, 300)); });
-  pages[name] = page;
+  page.on('console', (m) => { if (m.type() === 'error') log(name, 'console.error', m.text().slice(0, 300)); });
+  members.push({ name, page, seed: fs.readFileSync(`${SEEDS}/${name}.txt`, 'utf8').trim() });
 }
-const { alice, bob, carol } = pages;
+const [a, b, c] = members;
 
-async function shot(page, label) {
-  const width = await page.evaluate(() => document.documentElement.scrollWidth);
-  if (width > page.viewportSize().width) log('OVERFLOW', label, width);
-  await page.screenshot({ path: `${OUT}/shots/${label}.png`, fullPage: true });
+const until = (page, fn, arg, timeout) => page.waitForFunction(fn, arg, { polling: 500, ...(timeout ? { timeout } : {}) });
+const idle = (page) => until(page, () => !document.body.classList.contains('is-busy'));
+async function shot(m, label) {
+  if ((await m.page.evaluate(() => document.querySelector('#unlock-mnemonic')?.value?.length ?? 0)) > 0) throw new Error('seed field not empty at screenshot time');
+  const width = await m.page.evaluate(() => document.documentElement.scrollWidth);
+  if (width > m.page.viewportSize().width) log('OVERFLOW', label, width);
+  await m.page.screenshot({ path: `${OUT}/shots/${label}.png`, fullPage: true });
   log('shot', label);
 }
+async function toast(m) {
+  return (await m.page.textContent('#toast')) ?? '';
+}
+async function failIfToastBad(m, what) {
+  if (await m.page.locator('#toast.toast--bad:not([hidden])').count()) throw new Error(`${m.name} ${what}: ${await toast(m)}`);
+}
+const view = (m, step) => m.page.click(`.rail [data-view=${step}]`);
+const checkAll = async (page, sel) => { while (await page.locator(sel).count()) await page.locator(sel).first().click(); };
 
-async function tab(page, name) {
-  const isPhone = page.viewportSize().width < 600;
-  if (isPhone) {
-    const visible = await page.locator(`#tabs button[data-tab=${name}]`).isVisible();
-    if (!visible) {
-      await page.locator('dashhq-bar').locator('button.menu').click();
-    }
-  }
-  await page.locator(`#tabs button[data-tab=${name}]`).click();
+async function unlock(m, url = BASE) {
+  await m.page.goto(url);
+  await m.page.fill('#unlock-mnemonic', m.seed);
+  await m.page.click('#form-unlock button.dh-btn--primary');
+  await m.page.waitForSelector('#app:not([hidden]) .start');
+  log(m.name, 'unlocked');
 }
 
-async function act(page, label, fn, timeout = 180000) {
-  await page.evaluate(() => { const f = document.querySelector('#flash'); f.hidden = true; f.textContent = ''; });
-  await fn();
-  const handle = await page.waitForFunction((l) => { const f = document.querySelector('#flash'); return !f.hidden && f.textContent.startsWith(`${l}:`) ? f.textContent : null; }, label, { timeout, polling: 500 });
-  const text = await handle.jsonValue();
-  log(label, '->', text.slice(0, 400));
-  if (!text.endsWith(': done')) throw new Error(text);
-  return text;
-}
+await a.page.goto(BASE);
+await shot(a, 'landing');
+await unlock(a);
+await a.page.fill('#create-label', `E2E ${NETWORK} group`);
+await a.page.fill('#create-name', a.name);
+await a.page.click('#form-create-room button');
+await a.page.waitForSelector('.invite code');
+const invite = (await a.page.textContent('.invite code')).trim();
+const room = invite.match(/room=([A-Za-z0-9_-]+)/)[1];
+log('room', room, 'invite', invite);
+await shot(a, 'alone');
 
-async function sync(page) {
-  await tab(page, 'room');
-  await act(page, 'Sync', () => page.click('#sync'));
+for (const m of [b, c]) {
+  await unlock(m, invite.replace(/^https?:\/\/[^/]+\//, BASE.replace(/\?.*$/, '')));
+  await m.page.fill('#join-name', m.name);
+  await m.page.click('#form-join-room button');
+  await m.page.waitForSelector('.group');
+  await failIfToastBad(m, 'join');
+  log(m.name, 'joined');
 }
+await until(a.page, () => document.querySelectorAll('.person').length === 3, null, 60000);
+await checkAll(a.page, '[data-action=verify]:not(:checked)');
+await shot(a, 'members');
 
-for (const [name, page] of Object.entries(pages)) {
-  await page.goto(BASE);
-  if (name === 'alice') await shot(page, 'unlock__desktop');
-  if (name === 'carol') await shot(page, 'unlock__phone');
-  await page.fill('#unlock-mnemonic', fs.readFileSync(`${SEEDS}/${name}.txt`, 'utf8').trim());
-  await page.click('#form-unlock button:not([type])');
-  await page.waitForSelector('#tab-room', { state: 'visible' });
-  log(name, 'unlocked', await page.textContent('#me'));
+await a.page.click('[data-action=view][data-view=keys]');
+await a.page.fill('#ceremony-threshold', '2');
+await a.page.click('#form-ceremony button.dh-btn--primary');
+await idle(a.page);
+for (const m of members) {
+  if (m !== a) await view(m, 'keys');
+  await m.page.waitForSelector('#form-accept', { timeout: 60000 });
+  await checkAll(m.page, '#form-accept input[name=fp]:not(:checked)');
+  await m.page.click('#form-accept button');
+  await idle(m.page);
+  await failIfToastBad(m, 'accept');
+  log(m.name, 'accepted');
 }
-
-await act(alice, 'Create room', async () => {
-  await alice.fill('#form-create-room [name=label]', 'E2E 2-of-3 group');
-  await alice.fill('#form-create-room [name=name]', 'alice');
-  await alice.click('#form-create-room button');
-});
-const room = (await alice.textContent('#room-info')).match(/Room ([0-9a-f]{32})/)[1];
-log('room', room);
-for (const name of ['bob', 'carol']) {
-  const page = pages[name];
-  await act(page, 'Join room', async () => {
-    await page.fill('#form-join-room [name=room]', room);
-    await page.fill('#form-join-room [name=name]', name);
-    await page.click('#form-join-room button');
-  });
-}
-await sync(alice);
-await alice.waitForFunction(() => document.querySelectorAll('#members tr').length === 4);
-await shot(alice, 'room-members__desktop');
-
-await tab(alice, 'keys');
-await alice.waitForFunction(() => document.querySelectorAll('#ceremony-members input[name=member]').length === 3);
-await act(alice, 'Propose ceremony', async () => {
-  await alice.fill('#form-ceremony [name=threshold]', '2');
-  await alice.fill('#form-ceremony [name=label]', 'E2E group keys (2-of-3)');
-  await alice.click('#form-ceremony button');
-});
-
-for (const name of ['bob', 'carol']) { await sync(pages[name]); await tab(pages[name], 'keys'); }
-for (const [name, page] of Object.entries(pages)) {
-  await page.waitForSelector('[data-accept]');
-  await act(page, 'Accept', () => page.click('[data-accept]'));
-}
-for (let round = 0; round < 40; round++) {
-  let pending = 0;
-  for (const [name, page] of Object.entries(pages)) {
-    const status = await page.textContent('#ceremonies .card h2 .chip');
-    if (status.trim() === 'complete') continue;
-    pending++;
-    if (await page.locator('[data-advance]').count()) await act(page, 'Ceremony step', () => page.click('[data-advance]'));
-  }
-  log('ceremony round', round, 'pending', pending);
-  if (!pending) break;
-}
-const cid = (await alice.textContent('#ceremonies .card .muted')).match(/ceremony ([0-9a-f]{64})/)[1];
+for (const m of members) await until(m.page, () => /keys are ready/.test(document.querySelector('.step__title')?.textContent ?? ''), null, 180000);
+const cid = (await a.page.textContent('.stage .note code')).trim();
 log('ceremony complete', cid);
-await shot(alice, 'keys-complete__desktop');
-await shot(carol, 'keys-complete__phone');
+await shot(a, 'keys-ready');
+await shot(c, 'keys-ready-phone');
 
-await tab(alice, 'identity');
-await act(alice, 'Lock funds and propose identity (this waits for a ChainLock)', async () => {
-  await alice.selectOption('#identity-cid', cid);
-  await alice.fill('#form-identity-create [name=duffs]', '50000000');
-  await alice.click('#form-identity-create button');
-}, 30 * 60 * 1000);
+await view(a, 'identity');
+await until(a.page, () => /Balance/.test(document.querySelector('.stage')?.textContent ?? ''), null, 60000);
+await shot(a, 'fund');
+await a.page.fill('#fund-amount', '0.5');
+await a.page.click('#form-identity-create button.dh-btn--primary');
+await idle(a.page);
+await failIfToastBad(a, 'fund');
+log(a.name, 'asset lock and identity proposal:', await toast(a));
 
-async function approveLatest(page) {
-  await sync(page);
-  await tab(page, 'proposals');
-  await page.waitForSelector('[data-approve]');
-  await act(page, 'Review', () => page.locator('[data-approve]').first().click());
-  await page.waitForSelector('#sign-now');
-  return page;
+for (const m of [b, c]) {
+  await view(m, 'identity');
+  await m.page.waitForSelector('[data-action=review][data-sign="1"]', { timeout: 120000 });
+  await m.page.click('[data-action=review][data-sign="1"]');
+  await m.page.waitForSelector('#dialog[open] [data-action=sign]');
+  if (m === c) await shot(m, 'review-identity-phone');
+  await m.page.click('#dialog [data-action=sign]');
+  await idle(m.page);
+  await failIfToastBad(m, 'sign identity');
+  log(m.name, 'signed the identity');
 }
-
-for (const name of ['bob', 'carol']) {
-  const page = await approveLatest(pages[name]);
-  if (name === 'carol') await shot(page, 'review-identity-create__phone');
-  if (name === 'bob') await shot(page, 'review-identity-create__desktop-bob');
-  await act(page, 'Sign', () => page.click('#sign-now'));
-}
-await sync(alice);
-await tab(alice, 'proposals');
-await alice.waitForSelector('[data-execute]');
-await act(alice, 'Broadcast', () => alice.locator('[data-execute]').first().click(), 10 * 60 * 1000);
-await tab(alice, 'identity');
-await alice.waitForSelector('[data-show]');
-const identityId = await alice.locator('[data-show]').first().getAttribute('data-show');
+await view(a, 'identity');
+await a.page.waitForSelector('[data-action=execute]', { timeout: 120000 });
+await a.page.click('[data-action=execute]');
+await idle(a.page);
+await failIfToastBad(a, 'create identity');
+await until(a.page, () => /The group's identity/.test(document.querySelector('.step__title')?.textContent ?? ''), null, 120000);
+const identityId = (await a.page.textContent('.stage .dh-kv dd code')).trim();
 log('identity', identityId);
-await act(alice, 'Read identity', () => alice.locator('[data-show]').first().click());
-fs.writeFileSync(`${OUT}/identity-proved-read.txt`, await alice.textContent('#dialog-body'));
-await shot(alice, 'identity-proved-read__desktop');
-await alice.click('#dialog-close');
+await until(a.page, () => /proved/.test(document.querySelector('.stage .dh-kv')?.textContent ?? ''), null, 120000);
+await shot(a, 'identity');
 
-await sync(bob);
-await tab(bob, 'new');
-await bob.waitForFunction(() => document.querySelector('#propose-identity').options.length > 0);
-await act(bob, 'Propose', async () => {
-  await bob.selectOption('#propose-kind', 'credit-transfer');
-  await bob.fill('#form-propose [name=signer]', 'transfer');
-  await bob.fill('#form-propose [name=recipientId]', RECIPIENT);
-  await bob.fill('#form-propose [name=amount]', '100000000');
-  await bob.fill('#form-propose [name=note]', 'hosted-preview e2e: 0.001 DASH of credits');
-  await bob.click('#form-propose button');
-}, 10 * 60 * 1000);
+await view(b, 'proposals');
+await b.page.click('[data-action=new-proposal]');
+await b.page.click(`[data-action=kind][data-kind=${KIND}]`);
+await b.page.fill(KIND === 'credit-withdrawal' ? '#np-toAddress' : '#np-recipientId', RECIPIENT);
+await b.page.fill('#np-amount', '0.001');
+await b.page.fill('#np-note', `e2e on ${NETWORK}`);
+await b.page.click('#form-propose button.dh-btn--primary');
+await idle(b.page);
+await failIfToastBad(b, 'propose');
+log(b.name, `proposed a ${KIND}`);
 
-for (const name of ['carol', 'alice']) {
-  const page = await approveLatest(pages[name]);
-  if (name === 'alice') await shot(page, 'review-transfer__desktop');
-  if (name === 'carol') await shot(page, 'review-transfer__phone');
-  await act(page, 'Sign', () => page.click('#sign-now'));
+for (const m of [c, a]) {
+  await view(m, 'proposals');
+  await m.page.waitForSelector('[data-action=review][data-sign="1"]', { timeout: 120000 });
+  await m.page.click('[data-action=review][data-sign="1"]');
+  await m.page.waitForSelector('#dialog[open] [data-action=sign]');
+  if (m === a) await shot(m, 'review-transfer');
+  if (m === c) await shot(m, 'review-transfer-phone');
+  await m.page.click('#dialog [data-action=sign]');
+  await idle(m.page);
+  await failIfToastBad(m, 'sign transfer');
+  log(m.name, 'signed the transfer');
 }
-await sync(carol);
-await tab(carol, 'proposals');
-await carol.waitForSelector('[data-execute]');
-await act(carol, 'Broadcast', () => carol.locator('[data-execute]').first().click(), 10 * 60 * 1000);
-for (const [name, page] of Object.entries(pages)) { await sync(page); await tab(page, 'proposals'); }
-fs.writeFileSync(`${OUT}/proposals-alice.txt`, await alice.textContent('#proposals'));
-await shot(alice, 'proposals-executed__desktop');
-await shot(carol, 'proposals-executed__phone');
-await alice.evaluate(() => window.dashhq.theme.set('dark'));
-await shot(alice, 'proposals-executed__desktop-dark');
-await tab(alice, 'room');
-await shot(alice, 'room__desktop-dark');
-log('DONE', JSON.stringify({ room, cid, identityId }));
-for (const p of Object.values(pages)) await p.context().close();
+await view(c, 'proposals');
+await c.page.waitForSelector('[data-action=execute]', { timeout: 120000 });
+await c.page.click('[data-action=execute]');
+await idle(c.page);
+await failIfToastBad(c, 'broadcast transfer');
+await until(c.page, () => /Done/.test(document.querySelector('.stage')?.textContent ?? '') && !document.querySelector('[data-action=execute]'), null, 120000);
+log(c.name, 'broadcast the transfer:', await toast(c));
+for (const m of members) { await view(m, 'proposals'); await idle(m.page); }
+await shot(a, 'proposals-done');
+await shot(c, 'proposals-done-phone');
+fs.writeFileSync(`${OUT}/result.json`, JSON.stringify({ network: NETWORK, room, cid, identityId, recipient: RECIPIENT }, null, 1));
+log('DONE', JSON.stringify({ network: NETWORK, room, cid, identityId }));
+for (const m of members) await m.page.context().close();

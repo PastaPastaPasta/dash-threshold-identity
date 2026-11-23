@@ -78,11 +78,11 @@ dti ui --mnemonic-file seed.txt     # prints http://127.0.0.1:8770/#token=...
 
 It covers rooms and bundles, fingerprints, ceremonies, funding, proposals with the decoded transition, signing and broadcasting. It binds to 127.0.0.1, checks the Host header, and requires the per-run token in the printed URL. The seed phrase stays in the `dti` process.
 
-### The hosted testnet app
+### The hosted app
 
-`web/` builds the same UI into a page that runs entirely in the browser, with the relay on the same origin. It is locked to testnet, keeps the seed phrase in the tab's memory only, and is deployed at https://new-multisig.dashhq.org. See [docs/HOSTED.md](docs/HOSTED.md) for how it reuses `src/`, the testnet lock and the risks of serving it from a public domain.
+`web/` builds the same UI into a page that runs entirely in the browser, with the relay on the same origin, deployed at https://new-multisig.dashhq.org. It works on Testnet, devnets and a Local dashmate network; Mainnet is read only until it has been signed off. The seed phrase stays in the tab's memory. See [docs/HOSTED.md](docs/HOSTED.md) for how it reuses `src/`, the network checks and the risks of serving it from a public domain.
 
-The build is reproducible. Every served file except `index.html` is listed with its SHA-256 in `build-manifest.txt`; `index.html` carries that manifest's hash (the bundle hash, shown on the page), so the hash of `index.html` covers the whole site. Page hash of this commit: `0312cdafb9306ea338da1776709b55eaddb195e4259a90acd3a6a92cd58d195f`. To check that the live site serves exactly this source, see [docs/VERIFY.md](docs/VERIFY.md). What a mainnet build would need is in [docs/MAINNET-SIGNOFF.md](docs/MAINNET-SIGNOFF.md).
+The build is reproducible. Every served file except `index.html` is listed with its SHA-256 in `build-manifest.txt`; `index.html` carries that manifest's hash (the bundle hash, shown on the page), so the hash of `index.html` covers the whole site. Page hash of this commit: `4e2b89ebcb3b6ddbb22791726dc18801ff708dca19f04a5879a18d59039dc255`. To check that the live site serves exactly this source, see [docs/VERIFY.md](docs/VERIFY.md). What a mainnet build would need is in [docs/MAINNET-SIGNOFF.md](docs/MAINNET-SIGNOFF.md).
 
 ## The relay
 

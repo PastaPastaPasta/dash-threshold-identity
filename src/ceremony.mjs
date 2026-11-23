@@ -6,7 +6,8 @@ import { boxContext, encryptBox, decryptWithKey, boxKeys, PROTOCOL } from './env
 
 export const PURPOSES = ['AUTHENTICATION', 'ENCRYPTION', 'DECRYPTION', 'TRANSFER', 'VOTING', 'OWNER'];
 export const SECURITY_LEVELS = ['MASTER', 'CRITICAL', 'HIGH', 'MEDIUM'];
-export const NETWORKS = ['testnet', 'mainnet'];
+export { isNetwork } from './networks.mjs';
+import { isNetwork } from './networks.mjs';
 const MAX_REVEAL_BYTES = 240 * 1024;
 export const estimatedRevealSize = (n, t, slots) => 400 + slots * (300 + t * 100 + (n - 1) * 180);
 export const SLOT_PATTERN = /^[a-z][a-z0-9-]{0,31}$/;
@@ -38,7 +39,7 @@ export function validateConfig(config) {
   assert(config && typeof config === 'object', 'config must be an object');
   assert(config.protocol === PROTOCOL, `unsupported protocol ${config.protocol}`);
   assert(typeof config.room === 'string' && ROOM_PATTERN.test(config.room), 'config must name its room');
-  assert(NETWORKS.includes(config.network), `network must be one of ${NETWORKS.join(', ')}`);
+  assert(isNetwork(config.network), 'network must be mainnet, testnet, devnet-<name> or local');
   assert(typeof config.label === 'string' && config.label.length > 0 && config.label.length <= 120, 'label must be 1-120 characters');
   assert(Array.isArray(config.participants) && Array.isArray(config.keys), 'participants and keys must be lists');
   const n = config.participants.length;

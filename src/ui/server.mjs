@@ -6,7 +6,9 @@ import { hex, jsonReplacer } from '../util.mjs';
 import { routes } from './routes.mjs';
 
 const STATIC = path.join(path.dirname(new URL(import.meta.url).pathname), 'static');
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8' };
+const SHELL = path.join(path.dirname(new URL(import.meta.url).pathname), '..', '..', 'web', 'vendor', 'dashhq');
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.woff2': 'font/woff2' };
+const SHELL_FILES = new Set(['dashhq-tokens.css', 'dashhq-components.css', 'fonts/archivo-latin-var.woff2']);
 
 async function readBody(req) {
   const chunks = [];
@@ -32,8 +34,9 @@ export function serveUi(session, { port = 8770, host = '127.0.0.1' } = {}) {
     if (!allowedHosts.has(req.headers.host ?? '')) return send(403, { error: 'bad host' });
     const url = new URL(req.url, `http://${req.headers.host}`);
     if (!url.pathname.startsWith('/api/')) {
+      const shellFile = url.pathname.startsWith('/dashhq/') ? url.pathname.slice('/dashhq/'.length) : null;
       const file = url.pathname === '/' ? 'index.html' : path.basename(url.pathname);
-      const full = path.join(STATIC, file);
+      const full = shellFile !== null ? (SHELL_FILES.has(shellFile) ? path.join(SHELL, shellFile) : '/nonexistent') : path.join(STATIC, file);
       if (!fs.existsSync(full)) return send(404, 'not found', 'text/plain');
       return send(200, fs.readFileSync(full), TYPES[path.extname(full)] ?? 'application/octet-stream');
     }
