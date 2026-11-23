@@ -1,12 +1,30 @@
 # Mainnet guardrails: what Pasta sets up
 
-This is the deploy-trust part of [MAINNET-SIGNOFF.md](MAINNET-SIGNOFF.md). It takes one sitting of about 15 minutes, and only covers what needs Pasta's GitHub and Cloudflare accounts. Mainnet writes stay off (`MAINNET_WRITES = false`) until Pasta decides otherwise; nothing here turns them on.
+This is the deploy-trust part of [MAINNET-SIGNOFF.md](MAINNET-SIGNOFF.md). It takes one sitting of about 17 minutes, and only covers what needs Pasta's GitHub and Cloudflare accounts. Mainnet writes stay off (`MAINNET_WRITES = false`) until Pasta decides otherwise; nothing here turns them on.
 
 ## Already done in the repository
 
-- `.github/workflows/deploy-web-mainnet.yml` deploys the hosted app from `main` only, through a `web-mainnet` environment. It runs the tests, rebuilds, checks the README hash, and **refuses to deploy a build that Pasta has not signed** (`node web/release.mjs check`), then checks the live site byte for byte.
-- `web/release.mjs` signs and checks releases. A release is `releases/<page sha256>.json` plus an SSH signature (namespace `dti-release`). The keys allowed to sign are listed in `releases/allowed_signers`, which is empty until step 4.
-- `.github/CODEOWNERS` names Pasta as owner of `releases/`, `web/src/flags.mjs`, the Mainnet deploy workflow and `CODEOWNERS` itself. Step 3 makes that binding.
+- `.github/workflows/deploy-web-mainnet.yml` is now the only CI deploy of the hosted page; the older unsigned `deploy-web.yml` is removed, because the same Worker serves Mainnet.
+  - It runs from `main` only.
+  - Tests run in a first job with no secrets.
+  - A second job, in the `web-mainnet` environment, does a fresh checkout, installs without install scripts and rebuilds. It **refuses to deploy unless Pasta signed this exact build**, then deploys and checks the live site byte for byte.
+- `web/release.mjs` signs and checks releases. A release is `releases/<page sha256>.json` plus an SSH signature (namespace `dti-release`).
+  - It covers the page hash, the bundle hash of every served file, the hash of the Worker script wrangler uploads (which includes the CSP and the relay) and the hash of `web/wrangler.toml`.
+  - Keys allowed to sign are listed in `releases/allowed_signers`, which stays empty until step 4.
+  - Tested with throwaway keys. It refuses all of these:
+    - a release with no signature;
+    - a key not in the list;
+    - a release file edited after signing;
+    - the wrong namespace;
+    - a changed Worker script.
+- `.github/CODEOWNERS` names Pasta as owner of what enforces all this:
+  - `releases/` and all of `.github/`;
+  - the Mainnet flag;
+  - `web/release.mjs`, `manifest.mjs`, `verify.mjs` and `wrangler.toml`;
+  - the off switch;
+  - `package.json` and `package-lock.json`.
+
+  The page and Worker code are covered by the signature instead. Step 3 makes CODEOWNERS binding.
 - `npm run web:mainnet-off` turns Mainnet writes off and deploys that build (see "Switching Mainnet off").
 
 ## Steps (about 15 minutes)
@@ -24,12 +42,12 @@ This is the deploy-trust part of [MAINNET-SIGNOFF.md](MAINNET-SIGNOFF.md). It ta
 6. **TTL:** set an end date 90 days out. Leave Client IP Address Filtering empty, because GitHub's runners use changing addresses.
 7. **Continue to summary**, then **Create Token**. Copy the token; it is shown once.
 
-Cloudflare cannot limit a token to a single Worker. "Workers Scripts · Edit" covers every Worker in the account. That is why step 4 matters: the workflow deploys only builds Pasta signed. If the first run fails while updating `multisig.dashhq.org`, add **Zone · DNS · Edit** for `dashhq.org` to this token.
+This token can deploy every Worker in the account, because this deploy also re-applies the custom domains, which per-Worker token scopes don't cover. That is why step 4 matters: the workflow deploys only builds Pasta signed. Wrangler uploads the script before it updates the domains, so if a run fails while updating `multisig.dashhq.org`, the new code is already live and the verify step was skipped. In that case add **Zone · DNS · Edit** for `dashhq.org` to the token, and run the workflow again.
 
 ### 2. GitHub environment `web-mainnet` (4 min)
 
 1. Open https://github.com/PastaPastaPasta/dash-threshold-identity/settings/environments, then **New environment**. Name it `web-mainnet` and click **Configure environment**.
-2. Tick **Required reviewers**, add `PastaPastaPasta`, and leave **Prevent self-review** unticked (Pasta both starts and approves releases).
+2. Tick **Required reviewers**, add `PastaPastaPasta`, and leave **Prevent self-review** unticked (Pasta both starts and approves releases). If the environment already exists (it appears as soon as anyone runs the workflow), edit it instead.
 3. Untick **Allow administrators to bypass configured protection rules**.
 4. Under **Deployment branches and tags**, choose **Selected branches and tags**, then **Add deployment branch or tag rule**. Use the ref type **Branch**, the name pattern `main`, then **Add rule**.
 5. Under **Environment secrets**, click **Add environment secret** twice:
@@ -37,14 +55,19 @@ Cloudflare cannot limit a token to a single Worker. "Workers Scripts · Edit" co
    - `CLOUDFLARE_ACCOUNT_ID`: `23c3b2efbaecdd502503aaf5aa3e57a0`.
 6. Click **Save protection rules**.
 
-### 3. Make code owners binding on `main` (2 min)
+### 3. Make code owners binding on `main` (3 min)
 
 1. Open https://github.com/PastaPastaPasta/dash-threshold-identity/settings/branches, then **Add branch ruleset** (or edit the existing rule for `main`).
 2. **Ruleset name:** `main`. **Enforcement status:** Active. **Target branches:** Add target, then **Include default branch**.
-3. Tick **Require a pull request before merging**. Set **Required approvals** to `0`, and tick **Require review from Code Owners**.
-4. Leave the bypass list empty, then click **Create**.
+3. Tick **Require a pull request before merging**, then set:
+   - **Required approvals:** `0`;
+   - tick **Dismiss stale pull request approvals when new commits are pushed**;
+   - tick **Require review from Code Owners**;
+   - tick **Require approval of the most recent reviewable push**.
+4. Under **Bypass list**, click **Add bypass**, choose **Repository admin**, and set it to **For pull requests only**. GitHub never counts a PR author's own review, so without this Pasta could not merge his own release PRs. "For pull requests only" keeps the bypass visible on a PR; it never allows a direct push.
+5. Click **Create**.
 
-With this rule in place, nobody else (and no agent) can merge a change to the allowed signers, the Mainnet flag or the Mainnet workflow without Pasta's approval. Other PRs merge as before.
+With this rule, a PR that touches a code-owned file needs Pasta's approval of its latest commit. That covers the release keys, the workflows, the Mainnet flag, the release check, the Worker config and the dependencies, so no agent can merge such a change alone. Other PRs still merge without approval, but nothing can be pushed straight to `main` any more: README hash bumps and the off switch's follow-up go through PRs too. Check the rule once by opening a PR that touches `releases/allowed_signers`. It should show "Review required".
 
 ### 4. Release key (3 min)
 
@@ -80,19 +103,19 @@ These stop Cloudflare from injecting scripts into the page. The Worker already b
 
 Rollback: delete those rules.
 
-**Total:** about 16 minutes. Then tell the PM it's done. An agent checks it with `npm run web:verify -- https://multisig.dashhq.org` and a dry run of the workflow, which should stop at "Refuse a build that Pasta has not signed".
+**Total:** about 17 minutes. Then tell the PM it's done. An agent then dispatches the workflow once: Pasta approves the run, and it should stop at "Refuse a build that Pasta has not signed", because nothing is signed yet.
 
 ## Each Mainnet release afterwards (about 5 minutes)
 
 ```sh
-git switch main && git pull && npm ci && npm run web:build      # Pasta's machine reproduces the build
-node web/release.mjs sign --key ~/.ssh/dti-release             # signs this exact page hash
+git switch main && git pull && npm ci --ignore-scripts && npm run web:build   # Pasta's machine reproduces the build
+node web/release.mjs sign --key ~/.ssh/dti-release             # refuses a dirty checkout; signs this exact page and Worker
 git switch -c release-$(date +%F) && git add releases && git commit -m "chore: sign release" && git push -u origin HEAD
 gh pr create --fill && gh pr merge --merge
 gh workflow run deploy-web-mainnet.yml --ref main              # then approve the run in GitHub
 ```
 
-Signing on Pasta's machine covers the checklist's "reproduced on a second machine": the signature is over the page hash his own build produced, and the workflow refuses anything else.
+Signing on Pasta's machine covers the checklist's "reproduced on a second machine": the signature is over the hashes his own build produced, and the workflow refuses anything else. Before relying on this, compare his first build with the CI build once. If macOS and Linux builds ever differ, the check fails, which is safe, and an agent fixes the build.
 
 ## What this does not stop
 
@@ -110,4 +133,6 @@ One command, from a checkout of `main` with Cloudflare credentials in the enviro
 npm run web:mainnet-off
 ```
 
-It sets `MAINNET_WRITES = false` and re-pins the test. It then runs the tests, rebuilds, publishes the hash, deploys, and checks the live site. Commit and push the change afterwards. For an immediate stop without rebuilding, `npx wrangler rollback <previous version id>` from `web/` restores the last deploy; `npx wrangler deployments list` shows the ids.
+It checks that the checkout is a clean, current `origin/main` (pass `--force` to skip that in an emergency). It then sets `MAINNET_WRITES = false` and re-pins the test, runs the tests, rebuilds, publishes the hash, deploys and checks the live site. The credentials are `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` for a token that can deploy Workers: the agent box's (`~/.config/dash-nodes/cf-token`) or one Pasta keeps. Open a PR with the change afterwards so `main` matches what is live.
+
+For an immediate stop without rebuilding, `npx wrangler rollback <version id>` from `web/` restores an earlier deploy; `npx wrangler deployments list` shows the ids. Cloudflare may refuse a rollback across a Durable Object migration.
