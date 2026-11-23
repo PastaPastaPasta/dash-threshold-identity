@@ -1,7 +1,7 @@
 // Drives a full 2-of-3 run through the hosted page with three browser profiles on one network:
 // start a group, invite and join, check fingerprints, make the keys, fund and create the identity,
 // then send credits. Needs `npm i --no-save playwright`.
-//   BASE      page URL, default https://new-multisig.dashhq.org/
+//   BASE      page URL, default https://multisig.dashhq.org/
 //   NETWORK   testnet (default), local or devnet-<name>
 //   SEEDS     directory with <name>.txt seed phrases for NAMES (the first one funds the identity)
 //   NAMES     three member names, default ana,ben,cho
@@ -14,7 +14,7 @@ import fs from 'node:fs';
 import { chromium } from 'playwright';
 
 const NETWORK = process.env.NETWORK ?? 'testnet';
-const BASE = `${(process.env.BASE ?? 'https://new-multisig.dashhq.org/').replace(/\/?(\?.*)?$/, '/')}?network=${NETWORK}`;
+const BASE = `${(process.env.BASE ?? 'https://multisig.dashhq.org/').replace(/\/?(\?.*)?$/, '/')}?network=${NETWORK}`;
 const SEEDS = process.env.SEEDS ?? 'seeds';
 const NAMES = (process.env.NAMES ?? 'ana,ben,cho').split(',');
 const RECIPIENT = process.env.RECIPIENT;

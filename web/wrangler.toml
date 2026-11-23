@@ -4,7 +4,13 @@ compatibility_date = "2026-10-01"
 compatibility_flags = ["nodejs_compat"]
 workers_dev = false
 preview_urls = false
-routes = [{ pattern = "new-multisig.dashhq.org", custom_domain = true }]
+routes = [
+  { pattern = "multisig.dashhq.org", custom_domain = true },
+  { pattern = "new-multisig.dashhq.org", custom_domain = true },
+]
+
+[dev]
+upstream_protocol = "https"
 
 [assets]
 directory = "dist"

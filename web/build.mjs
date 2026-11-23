@@ -16,7 +16,7 @@ fs.mkdirSync(path.join(out, 'dashhq', 'fonts'), { recursive: true });
 const shell = fs.readFileSync(at('web', 'vendor', 'dashhq', 'dashhq-shell.js'));
 if (sha256(shell) !== SHELL_SHA256) throw new Error('vendored dashhq-shell.js does not match its pinned hash');
 const REGISTRY_ANCHOR = "    yappr:    { name: 'Yappr',";
-const REGISTRY_ENTRY = "    multisig: { name: 'Multisig',      url: 'https://new-multisig.dashhq.org', door: 'platform', only: 'Testnet' },\n";
+const REGISTRY_ENTRY = "    multisig: { name: 'Multisig',      url: 'https://multisig.dashhq.org', door: 'platform', only: 'Testnet' },\n";
 if (!shell.includes(REGISTRY_ANCHOR)) throw new Error('dashhq-shell.js registry anchor moved');
 fs.writeFileSync(path.join(out, 'dashhq', 'dashhq-shell.js'), shell.toString().replace(REGISTRY_ANCHOR, REGISTRY_ENTRY + REGISTRY_ANCHOR));
 for (const f of ['dashhq-tokens.css', 'dashhq-shell.css', 'dashhq-components.css', 'fonts/archivo-latin-var.woff2', 'fonts/OFL.txt']) {

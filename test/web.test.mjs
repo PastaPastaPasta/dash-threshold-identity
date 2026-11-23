@@ -10,7 +10,7 @@ import { isNetwork, network, roomPrefix, roomNetwork, roomOnNetwork } from '../s
 import { NetworkSession } from '../web/src/session.mjs';
 import { attach, api, platform } from '../web/src/transport.mjs';
 import { MAINNET_WRITES } from '../web/src/flags.mjs';
-import { securityFor, pageNetwork } from '../web/headers.mjs';
+import { securityFor, pageNetwork, canonicalRedirect } from '../web/headers.mjs';
 import { exportBundle } from '../src/store.mjs';
 import * as memory from '../src/storage/memory.mjs';
 
@@ -162,4 +162,17 @@ test('the base session still accepts any known network for the CLI', () => {
   for (const id of ['mainnet', 'testnet', 'local', 'devnet-paloma']) assert.ok(s.funding(id).address);
   assert.match(s.funding('mainnet').address, /^X/);
   assert.match(s.funding('devnet-paloma').address, /^y/);
+});
+
+test('the old preview host and plain HTTP redirect to the production host, but relay calls do not', () => {
+  const go = (url, method = 'GET') => canonicalRedirect(new Request(url, { method }));
+  const moved = go('https://new-multisig.dashhq.org/?network=mainnet#room=t_1');
+  assert.equal(moved.status, 301);
+  assert.equal(moved.headers.get('location'), 'https://multisig.dashhq.org/?network=mainnet');
+  assert.equal(go('http://multisig.dashhq.org/x?a=1').headers.get('location'), 'https://multisig.dashhq.org/x?a=1');
+  assert.equal(go('http://new-multisig.dashhq.org/', 'HEAD').headers.get('location'), 'https://multisig.dashhq.org/');
+  assert.equal(go('https://multisig.dashhq.org/'), null);
+  assert.equal(go('https://new-multisig.dashhq.org/v1/rooms/t_1/messages'), null);
+  assert.equal(go('https://new-multisig.dashhq.org/', 'POST'), null);
+  assert.equal(go('http://127.0.0.1:8787/'), null);
 });

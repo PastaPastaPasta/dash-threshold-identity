@@ -1,11 +1,13 @@
 import relay from '../relay/worker.mjs';
 
 export { Room, Limits } from '../relay/worker.mjs';
-import { SECURITY, securityFor, pageNetwork } from './headers.mjs';
+import { SECURITY, securityFor, pageNetwork, canonicalRedirect } from './headers.mjs';
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    const moved = canonicalRedirect(request);
+    if (moved) return moved;
     if (url.pathname.startsWith('/v1/')) {
       const upstream = await relay.fetch(request, env);
       const response = new Response(upstream.body, upstream);
