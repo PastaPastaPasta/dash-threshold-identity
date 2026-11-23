@@ -4,8 +4,8 @@ import { signShare, combineShares, verify } from './bls.mjs';
 import { requirementKey } from './state.mjs';
 import { unhex, assert, getOwn } from './util.mjs';
 
-export function hello(keys, room, name) {
-  return sealEnvelope(keys, room, 'hello', { name, transportPub: keys.transportPub, fingerprint: keys.fingerprint });
+export function hello(keys, room, name, { group, groupAt, funding } = {}) {
+  return sealEnvelope(keys, room, 'hello', { name, transportPub: keys.transportPub, fingerprint: keys.fingerprint, ...(group ? { group, groupAt } : {}), ...(funding ? { funding } : {}) });
 }
 
 export function proposeCeremony(keys, room, state, { network, label, threshold, members, keys: slots, createdAt }) {
