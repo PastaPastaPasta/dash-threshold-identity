@@ -228,7 +228,7 @@ function header() {
       <p class="group__meta">${meta.filter(Boolean).map((m) => `<span>${esc(m)}</span>`).join('')}</p>
     </div>
     <div class="group__actions">
-      ${c?.status === 'complete' ? '' : '<button class="dh-btn" data-action="copy-invite">Copy invite link</button>'}
+      ${c?.status === 'complete' || members().length < 2 ? '' : '<button class="dh-btn" data-action="copy-invite">Copy invite link</button>'}
       <details class="more" id="more-menu">
         <summary class="dh-btn dh-btn--quiet" aria-label="More actions">More</summary>
         <div class="more__menu" role="menu">
@@ -268,10 +268,10 @@ function membersView() {
       </li>`).join('')}
     </ul>
     <div class="dh-actions">
-      ${!ceremony() && !readOnly() ? `<button class="dh-btn dh-btn--primary" data-action="view" data-view="keys"${allChecked ? '' : ' aria-describedby="fp-note"'}>Continue to group keys</button>` : ''}
+      ${!ceremony() && !readOnly() ? `<button class="dh-btn${allChecked ? ' dh-btn--primary' : ''}" data-action="view" data-view="keys">${allChecked ? 'Continue to group keys' : 'Continue without checking'}</button>` : ''}
       <button class="dh-btn" data-action="copy-invite">Copy invite link</button>
     </div>
-    ${!allChecked ? '<p class="note" id="fp-note">You can continue now; you will confirm the fingerprints again before you accept the key ceremony.</p>' : ''}`}
+    ${!allChecked ? `<p class="note" id="fp-note"><strong>${list.filter((m) => !m.me && !verified.has(m.authPub)).length} of ${list.length - 1} fingerprints left to check.</strong> Accepting the key ceremony asks for every one of them.</p>` : ''}`}
     ${me ? '' : '<p class="note">You have not joined this group yet.</p>'}
     ${platform.hosted ? networkPanel() : ''}
   </section>`;
@@ -409,7 +409,7 @@ function proposalCard(p, { focus = false } = {}) {
   });
   const first = reqs[0];
   const failed = p.broadcasts.some((b) => !b.ok);
-  const execute = !readOnly() && p.status === 'ready' && (p.type !== 'identity-create' || p.proposer === mine?.name);
+  const execute = !readOnly() && p.status === 'ready' && !replaced(p) && (p.type !== 'identity-create' || p.proposer === mine?.name);
   return `<article class="proposal proposal--${esc(p.status)}${focus ? ' proposal--focus' : ''}">
     <header class="proposal__head">
       <h3 class="proposal__title">${esc(KINDS[p.type]?.title ?? (p.type === 'identity-create' ? 'Create the identity' : p.type))}</h3>
@@ -418,9 +418,9 @@ function proposalCard(p, { focus = false } = {}) {
     <p class="proposal__meta">Proposed by ${esc(p.proposer)} ${esc(ago(p.at))}${p.note ? `. ${esc(p.note)}` : ''}</p>
     ${facts(p.intent) || `<ul class="proposal__summary">${p.summary.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>`}
     ${first ? seats(first.people, { threshold: first.r.threshold, done: p.status === 'executed', refused: p.status === 'ready' && p.broadcasts.some((b) => !b.ok), filled: (x) => first.r.approvals.includes(x.index), label: (x) => (first.r.approvals.includes(x.index) ? 'signed' : '') }) : ''}
-    ${reqs.length > 1 ? `<p class="note">Needs signatures for ${reqs.length} keys; the count above is for the ${esc(SLOT_NAMES[first.r.slot] ?? first.r.slot)}.</p>` : ''}
+    ${reqs.length > 1 && p.status !== 'executed' ? `<p class="note">Needs signatures for ${reqs.length} keys; the count above is for the ${esc(SLOT_NAMES[first.r.slot] ?? first.r.slot)}.</p>` : ''}
     ${p.rejections.map((r) => `<p class="dh-notice dh-notice--warn">${esc(r.by)} rejected it: ${esc(r.reason || 'no reason given')}</p>`).join('')}
-    ${p.broadcasts.filter((b) => !b.ok).slice(-1).map((b) => `<div class="dh-notice dh-notice--error"><p>${esc(b.by)} tried to send it, and Platform refused: ${esc(plainError(b.error))}</p><details><summary>What Platform said</summary><pre>${esc(b.error)}</pre></details></div>`).join('')}
+    ${replaced(p) ? '<p class="note">Another proposal used the same nonce and went through, so this one can no longer be sent.</p>' : p.status === 'executed' ? '' : p.broadcasts.filter((b) => !b.ok).slice(-1).map((b) => `<div class="dh-notice dh-notice--error"><p>${esc(b.by)} tried to send it, and Platform refused: ${esc(plainError(b.error))}</p><details><summary>What Platform said</summary><pre>${esc(b.error)}</pre></details></div>`).join('')}
     <div class="dh-actions">
       ${sign ? `<button class="dh-btn dh-btn--primary" data-action="review" data-id="${esc(p.id)}" data-sign="1">Review and sign</button>` : ''}
       ${execute ? `<button class="dh-btn${failed ? '' : ' dh-btn--primary'}" data-action="execute" data-id="${esc(p.id)}">${failed ? 'Try sending again' : p.type === 'identity-create' ? 'Create the identity' : 'Broadcast to Platform'}</button>` : ''}
@@ -478,6 +478,13 @@ function plainError(text) {
   return String(text).split(/\n|\| /).filter(Boolean).at(-1)?.slice(0, 200) ?? String(text);
 }
 
+const replaced = (p) => p.status === 'ready' && p.broadcasts.some((b) => !b.ok) && p.intent && proposals().some((q) => q !== p && q.status === 'executed' && q.intent?.nonce !== undefined && q.intent?.nonce === p.intent.nonce && (q.intent?.identityId ?? q.intent?.ownerId) === (p.intent.identityId ?? p.intent.ownerId));
+
+function doneRow(p) {
+  const f = p.intent?.amount ? ` ${dashOfCredits(p.intent.amount)} ${platform.unit ?? unit(identity()?.network)}` : '';
+  return `<details class="done-row"><summary><span class="done-row__title">${esc(KINDS[p.type]?.title ?? (p.type === 'identity-create' ? 'Create the identity' : p.type))}${esc(f)}</span><span class="muted">${esc(ago(p.at))}, proposed by ${esc(p.proposer)}</span>${replaced(p) ? '<span class="dh-badge dh-badge--outline">replaced</span>' : '<span class="dh-badge dh-badge--good">done</span>'}</summary>${proposalCard(p)}</details>`;
+}
+
 function statusBadge(p) {
   const map = {
     executed: ['good', 'done'], ready: p.broadcasts.some((b) => !b.ok) ? ['bad', 'refused by Platform'] : ['info', 'ready to broadcast'], collecting: [canSign(p) ? 'warn' : 'info', canSign(p) ? 'needs your signature' : p.approvedByMe ? 'you signed' : 'collecting signatures'],
@@ -494,28 +501,41 @@ function proposalsView() {
   const groups = [
     ['Needs your signature', list.filter(canSign)],
     ['Ready to broadcast', list.filter((p) => p.status === 'ready' && !p.broadcasts.some((b) => !b.ok))],
-    ['Broadcast failed', list.filter((p) => p.status === 'ready' && p.broadcasts.some((b) => !b.ok))],
+    ['Refused by Platform', list.filter((p) => p.status === 'ready' && p.broadcasts.some((b) => !b.ok) && !replaced(p))],
     ['Waiting for others', list.filter((p) => p.status === 'collecting' && !canSign(p))],
-    ['Done', list.filter((p) => p.status === 'executed')],
+    ['Done', list.filter((p) => p.status === 'executed' || replaced(p))],
     ['Rejected or invalid', list.filter((p) => ['invalid', 'failed'].includes(p.status))],
   ].filter(([, items]) => items.length);
   return `<section class="step">
-    <div class="step__head"><h2 class="step__title">Proposals</h2>${readOnly() ? '' : '<button class="dh-btn dh-btn--primary" data-action="new-proposal">New proposal</button>'}</div>
+    <div class="step__head"><h2 class="step__title">Proposals</h2>${readOnly() || view === 'new' ? '' : '<button class="dh-btn dh-btn--primary" data-action="new-proposal">New proposal</button>'}</div>
     ${readOnly() ? readOnlyNote() : ''}
     <p class="step__lede">Everything the identity does starts as a proposal. Each signer's page rebuilds the transaction from what the proposal says before signing, so nobody can sign something other than what they read.</p>
     ${view === 'new' ? newProposal(id) : ''}
-    ${groups.length ? groups.map(([title, items]) => `<h3 class="group-title">${esc(title)} <span class="count">${items.length}</span></h3>${items.map((p) => proposalCard(p)).join('')}`).join('')
+    ${groups.length ? groups.map(([title, items]) => `<h3 class="group-title">${esc(title)} <span class="count">${items.length}</span></h3>${items.map((p) => (title === 'Done' ? doneRow(p) : proposalCard(p))).join('')}`).join('')
       : view === 'new' ? '' : '<div class="empty"><p class="empty__title">No proposals yet</p><p>Propose sending credits, writing a document or anything else the identity should do. The others see it here and sign.</p></div>'}
   </section>`;
 }
+
+function amountField() {
+  const u = platform.unit ?? unit(identity()?.network);
+  const bal = idInfo?.identityId === identity()?.identityId ? ` The identity holds ${dashOfCredits(idInfo.balance)} ${u}.` : '';
+  return `<div class="dh-field"><label class="dh-field__label" for="np-amount">Amount</label><div class="dh-input-group"><input class="dh-input" id="np-amount" name="amount" inputmode="decimal" autocomplete="off" required><span class="dh-input-group__addon">${esc(u)}</span></div><p class="dh-field__help">Sent as credits: 1 ${esc(u)} is 100,000,000,000 credits.${esc(bal)}</p></div>`;
+}
+
+const creditsOf = (text) => {
+  const t = String(text).trim().replace(/[,_\s]/g, '');
+  if (!/^\d+(\.\d{1,11})?$/.test(t)) throw new Error('Enter the amount as a number, for example 0.001');
+  const [whole, frac = ''] = t.split('.');
+  return (BigInt(whole) * CREDITS_PER_DASH + BigInt(frac.padEnd(11, '0'))).toString();
+};
 
 function newProposal(id) {
   const k = KINDS[kind];
   const field = (name, label, help = '', attrs = '', mono = false) => `<div class="dh-field"><label class="dh-field__label" for="np-${name}">${label}</label><input class="dh-input${mono ? ' dh-input--mono' : ''}" id="np-${name}" name="${name}" ${attrs}>${help ? `<p class="dh-field__help">${help}</p>` : ''}</div>`;
   const area = (name, label, help = '', placeholder = '') => `<div class="dh-field"><label class="dh-field__label" for="np-${name}">${label}</label><textarea class="dh-textarea dh-input--mono" id="np-${name}" name="${name}" rows="6" placeholder="${esc(placeholder)}"></textarea>${help ? `<p class="dh-field__help">${help}</p>` : ''}</div>`;
   const fields = {
-    'credit-transfer': field('recipientId', 'Recipient identity', '', 'required autocomplete="off" spellcheck="false"', true) + field('amount', 'Amount in credits', '100,000,000,000 credits are 1 DASH.', 'inputmode="numeric" required'),
-    'credit-withdrawal': field('toAddress', 'Core address', 'A P2PKH address on the same network.', 'required autocomplete="off" spellcheck="false"', true) + field('amount', 'Amount in credits', '100,000,000,000 credits are 1 DASH.', 'inputmode="numeric" required'),
+    'credit-transfer': field('recipientId', 'Recipient identity', '', 'required autocomplete="off" spellcheck="false"', true) + amountField(),
+    'credit-withdrawal': field('toAddress', 'Core address', 'A P2PKH address on the same network.', 'required autocomplete="off" spellcheck="false"', true) + amountField(),
     document: field('contractId', 'Contract id', '', 'required autocomplete="off" spellcheck="false"') + field('documentType', 'Document type', '', 'required autocomplete="off"')
       + `<div class="dh-field"><label class="dh-field__label" for="np-action">Change</label><select class="dh-select" id="np-action" name="action"><option value="create">Create a document</option><option value="replace">Replace a document</option><option value="delete">Delete a document</option></select></div>`
       + field('documentId', 'Document id', 'Only for replace and delete.', 'autocomplete="off" spellcheck="false"') + area('properties', 'Document fields (JSON)', '', '{"message": "hello"}'),
@@ -524,13 +544,12 @@ function newProposal(id) {
     'identity-update': field('addKeys', 'Keys to add', 'Ceremony id and key name, comma separated, e.g. <code>7801516c/master</code>.', 'autocomplete="off" spellcheck="false"') + field('disableKeyIds', 'Key numbers to disable', 'Comma separated, e.g. 0, 1.', 'autocomplete="off"'),
   };
   return `<form class="panel panel--new" id="form-propose" data-form="propose">
-    <div class="dh-actions dh-actions--end"><button type="button" class="dh-btn dh-btn--quiet" data-action="cancel-new">Cancel</button></div>
     <h3 class="panel__title">What should the identity do?</h3>
     <div class="dh-choices kinds">${Object.entries(KINDS).map(([key, v]) => `<button type="button" class="dh-choice" data-action="kind" data-kind="${key}" aria-pressed="${key === kind}"><span class="dh-choice__title">${esc(v.title)}</span><span class="dh-choice__desc">${esc(v.desc)}</span></button>`).join('')}</div>
     ${fields[kind]}
     ${field('note', 'Note for the group <span class="dh-field__optional">optional</span>', '', 'autocomplete="off"')}
     <details class="dh-disclosure"><summary><span>Signing key</span></summary>${field('signer', 'Key', `Defaults to the ${esc(SLOT_NAMES[k.slot])}, which Platform requires for this.`, `value="${esc(k.slot)}" autocomplete="off"`)}</details>
-    <div class="dh-actions"><button class="dh-btn dh-btn--primary">Propose to the group</button></div>
+    <div class="dh-actions"><button class="dh-btn dh-btn--primary">Propose to the group</button><button type="button" class="dh-btn dh-btn--quiet" data-action="cancel-new">Cancel</button></div>
     <p class="note">For ${esc(short(id.identityId, 12))}. Nothing happens until enough members sign and someone broadcasts it.</p>
   </form>`;
 }
@@ -589,14 +608,15 @@ dialog.addEventListener('click', (e) => {
 function reviewDialog(r, offerSign) {
   const title = KINDS[r.intent?.type]?.title ?? (r.intent?.type === 'identity-create' ? 'Create the identity' : r.intent?.type);
   showDialog(`
-    <header class="dlg__head"><h2 class="dlg__title">${esc(title)}</h2>${r.status === 'executed' ? '<span class="dh-badge dh-badge--good">already done</span>' : r.ok ? '<span class="dh-badge dh-badge--good">matches the proposal</span>' : '<span class="dh-badge dh-badge--bad">do not sign</span>'}</header>
+    <header class="dlg__head"><h2 class="dlg__title">${esc(title)}</h2>${r.status === 'executed' ? '<span class="dh-badge dh-badge--good">already done</span>' : r.ok ? '<span class="dh-badge dh-badge--info">matches the proposal</span>' : '<span class="dh-badge dh-badge--bad">do not sign</span>'}</header>
     <p class="dlg__lede">Proposed by ${esc(r.proposer)}${r.proposal?.note ? `, with the note "${esc(r.proposal.note)}"` : ''}.</p>
     ${facts(r.intent, { full: true }) || `<ul class="proposal__summary">${r.summary.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>`}
+    ${offerSign && r.ok && r.intent?.amount ? `<p class="confirm">Before you sign, confirm with ${esc(r.proposer)} that the group agreed to send <strong>${esc(dashOfCredits(r.intent.amount))} ${esc(platform.unit ?? unit(identity()?.network))}</strong> to <code>${esc(short(r.intent.recipientId ?? r.intent.outputAddress, 10))}</code>.</p>` : ''}
     ${r.ok ? `<div class="checks"><p><strong>What your page checked</strong></p><ul>
       <li>It rebuilt the transaction from the proposal above, and the bytes to sign are exactly those.</li>
       <li>The signing key is the group's own key, with the level Platform requires for this.</li>
       <li>On Platform, that key is enabled on the identity and the nonce is current.</li>
-    </ul><p class="note">It cannot tell whether the payment itself is right. Check the amount and recipient against what the group agreed.</p></div>` : ''}
+    </ul></div>` : ''}
     ${r.problems.length ? `<div class="dh-notice dh-notice--error"><p><strong>Why not to sign</strong></p><ul>${r.problems.map((p) => `<li>${esc(p)}</li>`).join('')}</ul></div>` : ''}
     ${r.attention?.length ? `<div class="dh-notice dh-notice--warn"><p><strong>This puts keys under a group's control.</strong> Check who holds them:</p><pre>${esc(r.attention.join('\n'))}</pre></div>` : ''}
     ${r.warnings.length ? `<div class="dh-notice dh-notice--info"><ul>${r.warnings.map((p) => `<li>${esc(p)}</li>`).join('')}</ul></div>` : ''}
@@ -691,8 +711,13 @@ document.addEventListener('submit', (e) => {
         say('That JSON is not valid', 'bad');
         return;
       }
-      if (kind === 'credit-transfer') Object.assign(args, { recipientId: f.recipientId.trim(), amount: f.amount.replace(/[,_\s]/g, '') });
-      if (kind === 'credit-withdrawal') Object.assign(args, { toAddress: f.toAddress.trim(), amount: f.amount.replace(/[,_\s]/g, '') });
+      try {
+        if (kind === 'credit-transfer') Object.assign(args, { recipientId: f.recipientId.trim(), amount: creditsOf(f.amount) });
+        if (kind === 'credit-withdrawal') Object.assign(args, { toAddress: f.toAddress.trim(), amount: creditsOf(f.amount) });
+      } catch (err) {
+        say(err.message, 'bad');
+        return;
+      }
       if (kind === 'identity-update') Object.assign(args, { addKeys: f.addKeys.split(',').map((x) => x.trim()).filter(Boolean).map((x) => { const [cid, slot] = x.split('/'); return { cid, slot }; }), disableKeyIds: f.disableKeyIds.split(',').map((x) => x.trim()).filter(Boolean).map(Number) });
       act('Propose', () => api('POST', '/api/propose', { kind, args }), { done: 'Proposed. The others see it now.' }).then((out) => { if (out) view = 'proposals'; });
       break;

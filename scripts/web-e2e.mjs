@@ -147,7 +147,7 @@ await view(b, 'proposals');
 await b.page.click('[data-action=new-proposal]');
 await b.page.click(`[data-action=kind][data-kind=${KIND}]`);
 await b.page.fill(KIND === 'credit-withdrawal' ? '#np-toAddress' : '#np-recipientId', RECIPIENT);
-await b.page.fill('#np-amount', '100000000');
+await b.page.fill('#np-amount', '0.001');
 await b.page.fill('#np-note', `e2e on ${NETWORK}`);
 await b.page.click('#form-propose button.dh-btn--primary');
 await idle(b.page);
