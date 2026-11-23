@@ -69,6 +69,7 @@ Each item needs an owner and evidence: a PR, a review or a run.
 
 **Platform**
 - [ ] Protocol 14 or later on Mainnet (signatures are checked; see [PLATFORM_REVIEW.md](PLATFORM_REVIEW.md)), and the pinned `@dashevo/evo-sdk` matches the network's release.
+- [ ] Asset-lock recovery reviewed ([HOSTED.md](HOSTED.md)): a closed tab resumes an unused registration lock from the chain; a top-up lock lost the same way can only be retried from the CLI (`dti fund locks`, `dti identity topup --index N`), and the scan trusts Insight to list every transaction.
 - [ ] A Mainnet dry run with Pasta's own group and a small balance: identity creation from a CLI-built asset lock, a document, a transfer, a withdrawal and a key rotation, each confirmed by a proved read.
 
 **Operations**

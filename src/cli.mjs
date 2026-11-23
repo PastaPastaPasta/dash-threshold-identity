@@ -27,7 +27,9 @@ An optional BIP39 passphrase comes from DTI_PASSPHRASE or --passphrase-file.
   dti ceremony show [--cid C]
 
   dti fund address --network N                 your Core funding address (from your seed) and balance
+  dti fund locks --network N                   asset locks your seed funded, found on chain, and whether each is used
   dti identity create [--cid C] --duffs D      funder: lock D duffs and propose the identity (mainnet: --confirm-mainnet)
+       (an earlier unused lock found on chain is resumed instead; --new-lock skips that, --index N picks one)
   dti identity show [--identity ID]            proved read: on-chain keys vs the group keys
   dti identity topup [--identity ID] --duffs D
 
@@ -162,11 +164,12 @@ export async function main(argv) {
     case 'fund': {
       const s = await session(v, { needRoom: false });
       if (sub === 'address') return print(await s.fundingBalance(v.network ?? 'testnet'), true);
+      if (sub === 'locks') return print((await s.findAssetLocks(v.network ?? 'testnet')).map(({ rawtx, ...l }) => l), true);
       break;
     }
     case 'identity': {
       const s = await session(v);
-      const lock = { duffs: Number(v.duffs), index: v.index ? Number(v.index) : undefined, confirmMainnet: v['confirm-mainnet'] };
+      const lock = { duffs: Number(v.duffs), index: v.index ? Number(v.index) : undefined, newLock: Boolean(v['new-lock']), confirmMainnet: v['confirm-mainnet'] };
       if (sub === 'create') return print(await s.proposeIdentityCreate({ cid: v.cid, ...lock }), true);
       if (sub === 'show') return print(await s.showIdentity(v.identity), true);
       if (sub === 'topup') return print(await s.topUp({ identityId: v.identity, ...lock }), true);

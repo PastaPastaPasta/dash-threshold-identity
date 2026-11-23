@@ -402,7 +402,7 @@ function identityView() {
     ${proposalCard(ip, { focus: true })}</section>`;
   const net = c.network;
   const f = funding;
-  const enough = f && f.duffs > 120000;
+  const enough = f && f.duffs > 220000;
   return `<section class="step">
     <h2 class="step__title">Fund and create the identity</h2>
     <p class="step__lede">One member pays for the identity by locking ${unit(net)} from their own address. It becomes the identity's starting balance. Any member can do this; the others then sign.</p>
@@ -416,8 +416,9 @@ function identityView() {
     ${readOnly() ? readOnlyNote() : `<form class="panel" id="form-identity-create" data-form="identity">
       <div class="dh-field"><label class="dh-field__label" for="fund-amount">Amount to lock</label>
         <div class="dh-input-group"><input class="dh-input" id="fund-amount" name="amount" inputmode="decimal" value="0.5" required><span class="dh-input-group__addon">${unit(net)}</span></div>
-        <p class="dh-field__help">Creating the identity costs about 0.001 ${unit(net)}; the rest stays as its balance. A small network fee is added.</p></div>
-      <div class="dh-actions"><button class="dh-btn dh-btn--primary"${f && !enough ? ' disabled aria-describedby="fund-why"' : ''}>Lock and propose the identity</button>${f && !enough ? `<span class="dh-actions__note" id="fund-why">Waiting for ${unit(net)} at your address.</span>` : ''}</div>
+        <p class="dh-field__help">Creating the identity costs about 0.001 ${unit(net)}; the rest stays as its balance. A small network fee is added. If an earlier lock of yours was never used, for example because the page closed while it waited, that lock is used instead, at its own amount.</p></div>
+      <label class="dh-check"><input type="checkbox" name="newLock"> Lock new funds even if an earlier unused lock is found</label>
+      <div class="dh-actions"><button class="dh-btn dh-btn--primary"${f && !enough ? ' aria-describedby="fund-why"' : ''}>Lock and propose the identity</button>${f && !enough ? `<span class="dh-actions__note" id="fund-why">Waiting for ${unit(net)} at your address, unless an earlier lock of yours is found.</span>` : ''}</div>
       <p class="note">This takes one to three minutes while the network confirms the lock. Keep this page open.</p>
     </form>`}
   </section>`;
@@ -729,7 +730,7 @@ document.addEventListener('submit', (e) => {
       const amount = Number(String(f.amount).replace(',', '.'));
       if (!(amount > 0)) { say('Enter how much to lock', 'bad'); return; }
       const c = ceremony();
-      const body = { cid: c.cid, duffs: Math.round(amount * DUFFS_PER_DASH) };
+      const body = { cid: c.cid, duffs: Math.round(amount * DUFFS_PER_DASH), newLock: f.newLock === 'on' };
       if (c.network === 'mainnet') {
         if (prompt(`This locks ${amount} DASH of real money on mainnet. Type "mainnet" to continue.`) !== 'mainnet') return;
         body.confirmMainnet = true;
