@@ -3,7 +3,7 @@
 //   npm run web:mainnet-off -- --no-deploy   only change and test the source
 //   --force   skip the check that this is a clean, current checkout of origin/main
 // Deploying needs CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID for an account token that can deploy Workers
-// (the agent box's token in ~/.config/dash-nodes/cf-token, or Pasta's own).
+// (an account token an agent uses, or Pasta's own).
 // Open a PR with the change afterwards so `main` matches what is live.
 import fs from 'node:fs';
 import path from 'node:path';

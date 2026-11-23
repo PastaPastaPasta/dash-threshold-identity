@@ -20,14 +20,14 @@ This is the deploy-trust part of [MAINNET-SIGNOFF.md](MAINNET-SIGNOFF.md). It ta
 - `.github/CODEOWNERS` names Pasta as owner of what enforces all this:
   - `releases/` and all of `.github/`;
   - the Mainnet flag;
-  - `web/release.mjs`, `manifest.mjs`, `verify.mjs` and `wrangler.toml`;
+  - `web/release.mjs`, `manifest.mjs`, `verify.mjs`, `build.mjs`, `headers.mjs` and `wrangler.toml`, which run in the deploy job before the signature check;
   - the off switch;
-  - `package.json` and `package-lock.json`.
+  - `package.json`, `package-lock.json` and `.npmrc`.
 
   The page and Worker code are covered by the signature instead. Step 3 makes CODEOWNERS binding.
 - `npm run web:mainnet-off` turns Mainnet writes off and deploys that build (see "Switching Mainnet off").
 
-## Steps (about 15 minutes)
+## Steps (about 17 minutes)
 
 ### 1. Cloudflare API token for deploys (4 min)
 
@@ -85,10 +85,10 @@ Then add the public key as an allowed signer, in a PR, which step 3 makes Pasta-
 cd dash-threshold-identity && git switch -c release-key
 echo "pasta namespaces=\"dti-release\" $(cat ~/.ssh/dti-release.pub)" >> releases/allowed_signers
 git commit -am "chore: add Pasta's release key" && git push -u origin release-key
-gh pr create --fill && gh pr merge --merge
+gh pr create --fill && gh pr merge --merge --admin
 ```
 
-The public key is not secret. Pasta can also send `~/.ssh/dti-release.pub` to an agent to open that PR, and approve it.
+List each key on one line only; `ssh-keygen` matches the first line with a key. The public key is not secret. Pasta can also send `~/.ssh/dti-release.pub` to an agent to open that PR, and approve it.
 
 ### 5. Cloudflare zone rules for the host (3 min)
 
@@ -111,7 +111,7 @@ Rollback: delete those rules.
 git switch main && git pull && npm ci --ignore-scripts && npm run web:build   # Pasta's machine reproduces the build
 node web/release.mjs sign --key ~/.ssh/dti-release             # refuses a dirty checkout; signs this exact page and Worker
 git switch -c release-$(date +%F) && git add releases && git commit -m "chore: sign release" && git push -u origin HEAD
-gh pr create --fill && gh pr merge --merge
+gh pr create --fill && gh pr merge --merge --admin
 gh workflow run deploy-web-mainnet.yml --ref main              # then approve the run in GitHub
 ```
 
@@ -133,6 +133,6 @@ One command, from a checkout of `main` with Cloudflare credentials in the enviro
 npm run web:mainnet-off
 ```
 
-It checks that the checkout is a clean, current `origin/main` (pass `--force` to skip that in an emergency). It then sets `MAINNET_WRITES = false` and re-pins the test, runs the tests, rebuilds, publishes the hash, deploys and checks the live site. The credentials are `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` for a token that can deploy Workers: the agent box's (`~/.config/dash-nodes/cf-token`) or one Pasta keeps. Open a PR with the change afterwards so `main` matches what is live.
+It checks that the checkout is a clean, current `origin/main` (pass `--force` to skip that in an emergency). It then sets `MAINNET_WRITES = false` and re-pins the test, runs the tests, rebuilds, publishes the hash, deploys and checks the live site. The credentials are `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` for a token that can deploy Workers: an account token an agent uses, or one Pasta keeps. Open a PR with the change afterwards so `main` matches what is live.
 
 For an immediate stop without rebuilding, `npx wrangler rollback <version id>` from `web/` restores an earlier deploy; `npx wrangler deployments list` shows the ids. Cloudflare may refuse a rollback across a Durable Object migration.

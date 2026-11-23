@@ -10,3 +10,6 @@
 /scripts/mainnet-off.mjs @PastaPastaPasta
 /package.json @PastaPastaPasta
 /package-lock.json @PastaPastaPasta
+/web/build.mjs @PastaPastaPasta
+/web/headers.mjs @PastaPastaPasta
+/.npmrc @PastaPastaPasta
