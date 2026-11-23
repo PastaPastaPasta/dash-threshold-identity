@@ -23,3 +23,6 @@
 /src/util.mjs @PastaPastaPasta
 /scripts/mainnet-off.mjs @PastaPastaPasta
 /docs/MAINNET-GUARDRAILS.md @PastaPastaPasta
+
+# Packages committed anywhere would run instead of the locked ones.
+node_modules/ @PastaPastaPasta

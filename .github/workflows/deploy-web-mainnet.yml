@@ -41,7 +41,7 @@ jobs:
           node-version: '22'
       - name: Refuse files that change how npm or wrangler behave
         run: |
-          if git ls-files | grep -E '(^|/)(\.env[^/]*|\.npmrc|npm-shrinkwrap\.json|\.dev\.vars)$'; then echo 'remove these files'; exit 1; fi
+          if git ls-files | grep -E '(^|/)(\.env[^/]*|\.npmrc|npm-shrinkwrap\.json|\.dev\.vars)$|(^|/)node_modules/'; then echo 'remove these files'; exit 1; fi
       - run: npm ci --ignore-scripts
       - run: npm run web:build
       - name: Check the README publishes this build

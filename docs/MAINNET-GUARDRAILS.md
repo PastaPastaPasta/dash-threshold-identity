@@ -17,7 +17,7 @@ This is the deploy-trust part of [MAINNET-SIGNOFF.md](MAINNET-SIGNOFF.md). It ta
     - a release file edited after signing;
     - the wrong namespace;
     - a changed Worker script.
-- `.github/CODEOWNERS` makes Pasta the owner of everything by default, so any new file (a `.env`, an `npm-shrinkwrap.json`, a new workflow) needs his review. It leaves out only code whose output the signed release covers (`web/src/`, `web/static/`, `web/vendor/`, `web/worker.mjs`, `relay/`, `src/`), plus tests, docs and scripts. Inside those it re-owns the Mainnet flag, `src/networks.mjs` and `src/util.mjs` (the deploy job imports them before the check), the off switch and this doc. The deploy job also refuses tracked `.env`, `.npmrc`, `npm-shrinkwrap.json` and `.dev.vars` files, and pins wrangler's API address. Step 3 makes CODEOWNERS binding.
+- `.github/CODEOWNERS` makes Pasta the owner of everything by default, so any new file (a `.env`, an `npm-shrinkwrap.json`, a new workflow) needs his review. It leaves out only code whose output the signed release covers (`web/src/`, `web/static/`, `web/vendor/`, `web/worker.mjs`, `relay/`, `src/`), plus tests, docs and scripts. Inside those it re-owns the Mainnet flag, `src/networks.mjs` and `src/util.mjs` (the deploy job imports them before the check), the off switch and this doc. It also owns any committed `node_modules/`, at any depth. The deploy job also refuses tracked `.env`, `.npmrc`, `npm-shrinkwrap.json`, `.dev.vars` and `node_modules/` files, and pins wrangler's API address. Step 3 makes CODEOWNERS binding.
 - `npm run web:mainnet-off` turns Mainnet writes off and deploys that build (see "Switching Mainnet off").
 
 ## Steps (about 17 minutes)
