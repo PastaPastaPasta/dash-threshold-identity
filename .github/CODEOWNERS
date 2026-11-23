@@ -1,0 +1,5 @@
+# Changes to Mainnet release controls need Pasta's review (see docs/MAINNET-GUARDRAILS.md).
+/releases/ @PastaPastaPasta
+/web/src/flags.mjs @PastaPastaPasta
+/.github/workflows/deploy-web-mainnet.yml @PastaPastaPasta
+/.github/CODEOWNERS @PastaPastaPasta

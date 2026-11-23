@@ -17,7 +17,8 @@
     "web:dev": "npm run web:build && wrangler dev --config web/wrangler.toml",
     "web:deploy": "npm run web:build && wrangler deploy --config web/wrangler.toml",
     "web:hash": "npm run web:build && node web/verify.mjs --write-readme",
-    "web:verify": "npm run web:build && node web/verify.mjs"
+    "web:verify": "npm run web:build && node web/verify.mjs",
+    "web:mainnet-off": "node scripts/mainnet-off.mjs"
   },
   "dependencies": {
     "@dashevo/dashcore-lib": "0.26.1",
