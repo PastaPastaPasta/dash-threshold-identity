@@ -21,7 +21,7 @@ export function routes(session) {
     'POST /api/ceremony/advance': async (b) => session.advanceCeremony(b.cid, { confirm: async () => Boolean(b.accept) }),
     'GET /api/network': async (b) => session.networkStatus(b.network ?? 'testnet'),
     'GET /api/funding': async (b) => session.fundingBalance(b.network ?? 'testnet'),
-    'POST /api/identity/create': async (b) => session.proposeIdentityCreate({ cid: b.cid, duffs: Number(b.duffs), confirmMainnet: b.confirmMainnet === true }),
+    'POST /api/identity/create': async (b) => session.proposeIdentityCreate({ cid: b.cid, duffs: Number(b.duffs), newLock: b.newLock === true, confirmMainnet: b.confirmMainnet === true }),
     'POST /api/identity/topup': async (b) => session.topUp({ identityId: b.identityId, duffs: Number(b.duffs), confirmMainnet: b.confirmMainnet === true }),
     'GET /api/identity': async (b) => session.showIdentity(b.identityId),
     'POST /api/propose': async (b) => session.prepare(b.kind, b.args ?? {}),
