@@ -93,7 +93,7 @@ Each item needs an owner and evidence: a PR, a review or a run.
 | D9: funding key in the page | **Open (Pasta).** The member's phrase derives a Core key that moves DASH with no threshold. Together with deploy trust, this is a theft path for every balance typed into the page. |
 | Deploy trust and `web-mainnet` environment | **Open (Pasta).** The repository side is ready: a signed-release deploy workflow, release signing and CODEOWNERS ([MAINNET-GUARDRAILS.md](MAINNET-GUARDRAILS.md)). Pasta's account steps take about 15 minutes. |
 | D6: Mainnet CSP | **Open.** `connect-src` allows `https://*:443`, because there is no named DAPI gateway on Mainnet. |
-| D10: typed confirmation | **Done** in this change. Every Mainnet lock, signature and broadcast asks the member to type the amount, or `mainnet` when there is no amount, under a "Mainnet, real DASH" warning. `NetworkSession` refuses Mainnet approve and execute calls without `confirmMainnet`. |
+| D10: typed confirmation | **Done** in this change, for the hosted page and the local `dti ui`. Before locking funds, signing or broadcasting on Mainnet, the page shows a "Mainnet, real DASH" warning with the amount and recipient, and asks the member to type the amount (or `mainnet` when there is none). The check depends on the network of the proposal or ceremony and fails closed. `Session.approve` and `execute` refuse Mainnet without `confirmMainnet`, and so does `assetLock`; in the CLI that is `--confirm-mainnet`. This guards against a member's own mistake. It is not a security control, because a changed page could set the flag itself. Only the amount is typed; the recipient is shown in groups of four with its payment history. |
 | Change and fee handling | Checked, and two bugs fixed in PR #6. Change returns to the funding address and the fee is capped at 0.001 DASH. Locks with 7 or more inputs had paid below the relay minimum, and a 100,000-duff registration lock would have been stranded; the minimum is now 200,000. |
 | Platform version | Mainnet at protocol 14 (DAPI read on 2026-11-22). |
 | Signed release (D5), second-machine build | **Open (Pasta).** Needs a release key that Pasta holds. |
@@ -101,7 +101,7 @@ Each item needs an owner and evidence: a PR, a review or a run.
 | Independent security review | Partly done: agent reviews only, so not a human review. |
 | Live Mainnet dry run | **Read only.** DAPI connect and balance lookups pass. There is no Mainnet test wallet with DASH, so nothing was spent. |
 
-Turning writes on later is one change, made after Pasta's guardrail steps: `MAINNET_WRITES = true` in `web/src/flags.mjs` and its pinning test, then a deploy. To turn them off again, run `npm run web:mainnet-off` (it sets the flag false, tests, deploys and checks the live site), or roll back the Worker with `npx wrangler rollback <previous version>` from `web/`.
+Turning writes on later is one change, made after Pasta's guardrail steps and after D9 is settled. As built, the flag would also enable asset locks built in the page from a member's phrase, which D9 recommends against; either D9 is accepted as is, or that path is turned off for Mainnet first: `MAINNET_WRITES = true` in `web/src/flags.mjs` and its pinning test, then a deploy. To turn them off again, run `npm run web:mainnet-off` (it sets the flag false, tests, deploys and checks the live site), or roll back the Worker with `npx wrangler rollback <previous version>` from `web/`.
 
 ## What stays true regardless
 

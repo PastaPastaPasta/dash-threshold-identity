@@ -104,7 +104,7 @@ export class NetworkSession extends Session {
   async execute(proposalId, options) {
     this.writable('Broadcasting');
     this.confirmed('Broadcasting', options);
-    return super.execute(proposalId);
+    return super.execute(proposalId, options);
   }
 
   async topUp(args) {

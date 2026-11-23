@@ -233,3 +233,12 @@ test('claiming to pay needs finished group keys', async (t) => {
   await s.createRoom({ label: 'claims', name: 'p1' });
   await assert.rejects(s.claimFunding('ab'.repeat(32)), /ceremony|not ready|unknown|no such/i);
 });
+
+test('the base session also asks for an explicit confirmation before signing or sending on Mainnet', async (t) => {
+  const s = new Session(phrase);
+  t.mock.method(Session.prototype, 'review', async () => ({ ok: true, problems: [], proposal: { network: 'mainnet', approvedByMe: false } }));
+  t.mock.method(Session.prototype, 'sync', async () => {});
+  t.mock.method(Session.prototype, 'findProposal', () => ({ s: {}, p: { id: 'a'.repeat(64), status: 'ready', body: { network: 'mainnet', intent: {} } } }));
+  await assert.rejects(s.approve('a'), /signs a Mainnet transition; confirm it explicitly/);
+  await assert.rejects(s.execute('a'), /broadcasts a Mainnet transition; confirm it explicitly/);
+});

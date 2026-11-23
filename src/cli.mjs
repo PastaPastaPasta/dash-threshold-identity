@@ -192,9 +192,9 @@ export async function main(argv) {
       break;
     }
     case 'review': { const s = await session(v); return print(await s.review(sub, { online: !v.offline }), true); }
-    case 'approve': { const s = await session(v); return print(await s.approve(sub, { confirm: confirmApproval(v.yes), online: !v.offline, acknowledgeKeys: Boolean(v['accept-new-keys']) }), true); }
+    case 'approve': { const s = await session(v); return print(await s.approve(sub, { confirm: confirmApproval(v.yes), online: !v.offline, acknowledgeKeys: Boolean(v['accept-new-keys']), confirmMainnet: Boolean(v['confirm-mainnet']) }), true); }
     case 'reject': { const s = await session(v); return print(await s.reject(sub, v.reason ?? ''), true); }
-    case 'execute': { const s = await session(v); return print(await s.execute(sub), true); }
+    case 'execute': { const s = await session(v); return print(await s.execute(sub, { confirmMainnet: Boolean(v['confirm-mainnet']) }), true); }
     case 'relay': {
       if (sub === 'serve') {
         const port = Number(v.port ?? 8787);
