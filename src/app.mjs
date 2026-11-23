@@ -269,23 +269,26 @@ export class Session {
     const all = j.get();
     const key = (i) => `${kind}/${i}`;
     if (index !== undefined) assert(!all[key(index)]?.usedBy, `asset lock ${key(index)} was already used`);
-    let rec = newLock ? null : index !== undefined ? (all[key(index)] ?? null) : (Object.values(all).find((r) => r.kind === kind && !r.usedBy && !r.abandoned && (kind === 'registration' ? r.duffs >= core.MIN_IDENTITY_CREATE_DUFFS : r.duffs === duffs)) ?? null);
-    if (rec?.abandoned) delete rec.abandoned;
+    const candidates = newLock ? [] : index !== undefined ? [all[key(index)]].filter(Boolean)
+      : Object.values(all).filter((r) => r.kind === kind && !r.usedBy && !r.abandoned && (kind === 'registration' ? r.duffs >= core.MIN_IDENTITY_CREATE_DUFFS : r.duffs === duffs)).sort((a, b) => a.index - b.index);
+    let rec = null;
     const save = () => j.update((latest) => {
       const k = `${rec.kind}/${rec.index}`;
       const next = { ...latest[k], ...rec };
       if (!rec.abandoned) delete next.abandoned;
       latest[k] = next;
     });
-    if (rec && kind === 'registration') {
+    for (const candidate of candidates) {
+      rec = candidate;
+      if (rec.abandoned) delete rec.abandoned;
+      if (kind !== 'registration') break;
       const { identityId, used } = await this.registrationLockUse(network, rec.txid, rec.vout ?? 0);
-      if (used) {
-        rec.usedBy ??= `identity:${identityId}`;
-        save();
-        assert(index === undefined, `asset lock ${key(index)} was already used (identity ${identityId})`);
-        this.log(`asset lock ${rec.txid} already created identity ${identityId}; marked it used`);
-        rec = null;
-      }
+      if (!used) break;
+      rec.usedBy ??= `identity:${identityId}`;
+      save();
+      assert(index === undefined, `asset lock ${key(index)} was already used (identity ${identityId})`);
+      this.log(`asset lock ${rec.txid} already created identity ${identityId}; marked it used`);
+      rec = null;
     }
     if (rec) this.log(`resuming asset lock ${rec.txid} (${rec.duffs} duffs, ${rec.state})`);
     let onChain = [];

@@ -34,11 +34,11 @@ function lockTx(kind, index, duffs) {
 function fakeChain({ locks = [], fillers = 0, utxos = [], evicted = new Set() } = {}) {
   const raw = new Map();
   const history = [];
+  for (let i = 0; i < fillers; i++) history.push({ txid: `f${i}`.padStart(64, '0'), blockheight: 50 });
   for (const l of locks) {
     raw.set(l.txid, l.rawtx);
     history.push({ txid: l.txid, type: 8, blockheight: 100 });
   }
-  for (let i = 0; i < fillers; i++) history.push({ txid: `f${i}`.padStart(64, '0'), blockheight: 50 });
   for (const u of utxos) raw.set(u.txid, u.rawtx);
   const sent = [];
   const fetch = async (url, init = {}) => {
@@ -239,4 +239,18 @@ test('a journaled lock that left the mempool is sent again instead of waiting fo
   const out = await s.assetLock(NET, { duffs: 300000 });
   assert.deepEqual([out.txid, out.state, chain.sent.map((x) => x.id)], [lock.txid, 'chainlocked', [lock.txid]]);
   assert.ok(logs.some((m) => /no longer known to the network/.test(m)));
+});
+
+test('a used journal lock is skipped for the next unused one, not a new lock', async (t) => {
+  const first = lockTx('registration', 0, 250000);
+  const second = lockTx('registration', 1, 250000);
+  const chain = fakeChain({ locks: [first, second], utxos: [fundingCoin(5000000)] });
+  const sdk = fakeSdk(new Set([await core.assetLockIdentityId(first.txid, 0)]));
+  const { s } = session(t, chain, sdk);
+  s.assetLockJournal(NET).update((all) => {
+    for (const l of [first, second]) all[`registration/${l.index}`] = { kind: 'registration', index: l.index, duffs: 250000, txid: l.txid, vout: 0, state: 'broadcast', rawtx: l.rawtx, fee: l.fee };
+  });
+  const out = await s.assetLock(NET, { duffs: 250000 });
+  assert.deepEqual([out.txid, chain.sent.length], [second.txid, 0]);
+  assert.match(s.assetLockJournal(NET).get()['registration/0'].usedBy, /^identity:/);
 });

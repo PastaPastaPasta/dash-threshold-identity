@@ -52,6 +52,7 @@ An optional BIP39 passphrase comes from DTI_PASSPHRASE or --passphrase-file.
 Options: --room ROOM (or DTI_ROOM), --relay URL, --json`;
 
 const OPTIONS = {
+  'new-lock': { type: 'boolean' },
   room: { type: 'string' }, relay: { type: 'string' }, label: { type: 'string' }, name: { type: 'string' },
   network: { type: 'string' }, threshold: { type: 'string' }, members: { type: 'string' }, keys: { type: 'string' },
   cid: { type: 'string' }, yes: { type: 'boolean' }, json: { type: 'boolean' }, out: { type: 'string' },
