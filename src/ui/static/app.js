@@ -134,14 +134,14 @@ function currentStep(s) {
   return 'proposals';
 }
 
-function seats(people, { threshold, filled = () => false, label = () => '', done = false } = {}) {
+function seats(people, { threshold, filled = () => false, label = () => '', done = false, refused = false } = {}) {
   return `<ol class="quorum" aria-label="${esc(threshold ? `${threshold} of ${people.length} needed` : 'Members')}">
     ${people.map((p, i) => `<li class="seat${filled(p) ? ' seat--on' : ''}${p.me ? ' seat--me' : ''}">
       <span class="seat__disc" aria-hidden="true">${esc((p.name ?? '?').slice(0, 1).toUpperCase())}</span>
       <span class="seat__name">${esc(p.name)}${p.me ? ' <span class="seat__you">you</span>' : ''}</span>
       <span class="seat__state">${esc(label(p, i))}</span>
     </li>`).join('')}
-  </ol>${threshold ? quorumRule(people.filter(filled).length, threshold, done) : ''}`;
+  </ol>${threshold ? (refused ? `<p class="quorum__rule"><span class="quorum__count">${people.filter(filled).length} signed</span>, ${threshold} needed. Platform refused it; see below.</p>` : quorumRule(people.filter(filled).length, threshold, done)) : ''}`;
 }
 
 function quorumRule(n, t, done = false) {
@@ -417,7 +417,7 @@ function proposalCard(p, { focus = false } = {}) {
     </header>
     <p class="proposal__meta">Proposed by ${esc(p.proposer)} ${esc(ago(p.at))}${p.note ? `. ${esc(p.note)}` : ''}</p>
     ${facts(p.intent) || `<ul class="proposal__summary">${p.summary.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>`}
-    ${first ? seats(first.people, { threshold: first.r.threshold, done: p.status === 'executed', filled: (x) => first.r.approvals.includes(x.index), label: (x) => (first.r.approvals.includes(x.index) ? 'signed' : '') }) : ''}
+    ${first ? seats(first.people, { threshold: first.r.threshold, done: p.status === 'executed', refused: p.status === 'ready' && p.broadcasts.some((b) => !b.ok), filled: (x) => first.r.approvals.includes(x.index), label: (x) => (first.r.approvals.includes(x.index) ? 'signed' : '') }) : ''}
     ${reqs.length > 1 ? `<p class="note">Needs signatures for ${reqs.length} keys; the count above is for the ${esc(SLOT_NAMES[first.r.slot] ?? first.r.slot)}.</p>` : ''}
     ${p.rejections.map((r) => `<p class="dh-notice dh-notice--warn">${esc(r.by)} rejected it: ${esc(r.reason || 'no reason given')}</p>`).join('')}
     ${p.broadcasts.filter((b) => !b.ok).slice(-1).map((b) => `<div class="dh-notice dh-notice--error"><p>${esc(b.by)} tried to send it, and Platform refused: ${esc(plainError(b.error))}</p><details><summary>What Platform said</summary><pre>${esc(b.error)}</pre></details></div>`).join('')}

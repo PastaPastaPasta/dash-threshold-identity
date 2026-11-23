@@ -9,6 +9,7 @@
 //   RECIPIENT identity that receives the credits, or the Core address for a withdrawal
 //   OUT       output directory for screenshots and the log
 //   INSECURE_TLS=1 accepts the self-signed certificates of a local dashmate network
+//   On local, the browser is granted local-network access so a public page can reach 127.0.0.1
 import fs from 'node:fs';
 import { chromium } from 'playwright';
 
@@ -34,6 +35,7 @@ for (const [i, name] of NAMES.entries()) {
   const dir = `${OUT}/profile-${name}`;
   fs.rmSync(dir, { recursive: true, force: true });
   const ctx = await chromium.launchPersistentContext(dir, { ...VIEWS[i], serviceWorkers: 'block', ignoreHTTPSErrors: process.env.INSECURE_TLS === '1' });
+  if (NETWORK === 'local') await ctx.grantPermissions(['local-network-access'], { origin: new URL(BASE).origin }).catch(() => {});
   const page = ctx.pages()[0] ?? (await ctx.newPage());
   page.setDefaultTimeout(240000);
   page.on('pageerror', (e) => log(name, 'PAGEERROR', e.message));
