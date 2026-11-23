@@ -1,0 +1,28 @@
+# Pasta owns everything by default: any file the Mainnet deploy job could run or read before or during
+# the signature check needs his review (see docs/MAINNET-GUARDRAILS.md). New files at the root, such as
+# .env or npm-shrinkwrap.json, are owned automatically.
+* @PastaPastaPasta
+
+# Code whose output the signed release covers, plus tests and docs, needs no extra review.
+/web/src/
+/web/static/
+/web/vendor/
+/web/worker.mjs
+/relay/
+/src/
+/test/
+/docs/
+/examples/
+/bin/
+/scripts/
+/README.md
+
+# Re-owned inside those directories, because they run in the deploy job or gate Mainnet.
+/web/src/flags.mjs @PastaPastaPasta
+/src/networks.mjs @PastaPastaPasta
+/src/util.mjs @PastaPastaPasta
+/scripts/mainnet-off.mjs @PastaPastaPasta
+/docs/MAINNET-GUARDRAILS.md @PastaPastaPasta
+
+# Packages committed anywhere would run instead of the locked ones.
+node_modules/ @PastaPastaPasta

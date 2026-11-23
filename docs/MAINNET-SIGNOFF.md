@@ -73,7 +73,8 @@ Each item needs an owner and evidence: a PR, a review or a run.
 - [ ] A Mainnet dry run with Pasta's own group and a small balance: identity creation from a CLI-built asset lock, a document, a transfer, a withdrawal and a key rotation, each confirmed by a proved read.
 
 **Operations**
-- [ ] The `web-mainnet` environment exists with required reviewers, a branch rule and a Worker-scoped token. The deploy workflow refuses any other ref.
+- [ ] Pasta's setup in [MAINNET-GUARDRAILS.md](MAINNET-GUARDRAILS.md): the deploy token kept in the `web-mainnet` environment, the environment itself, code-owner review on `main`, the release key and the zone rules.
+- [ ] The `web-mainnet` environment exists with required reviewers, a branch rule and a deploy token kept only in it (Cloudflare cannot scope it to this Worker while it manages custom domains; signed releases make up for that). The deploy workflow refuses any other ref.
 - [ ] The Mainnet host injects nothing: Web Analytics, Zaraz, Rocket Loader, Email Obfuscation and Apps are off for it ([HOSTED.md](HOSTED.md)), and `web:verify` passes against it.
 - [ ] Relay limits sized for Mainnet, retention published (D8), and a way to see abuse (room counts, 429 rates).
 - [ ] Rollback: the previous Worker version stays deployable, and the last known-good page hash is recorded.

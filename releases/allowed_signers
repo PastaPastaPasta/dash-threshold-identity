@@ -1,0 +1,2 @@
+# Keys allowed to sign releases of the hosted page, one per line:
+#   pasta namespaces="dti-release" ssh-ed25519 AAAA... dti-release
