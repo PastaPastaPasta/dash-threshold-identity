@@ -823,7 +823,7 @@ document.addEventListener('submit', (e) => {
       if (c.network === 'mainnet') {
         const expect = dashOfDuffs(body.duffs).replace(/,/g, '');
         showDialog(`<header class="dlg__head"><h2 class="dlg__title">Lock ${esc(expect)} DASH on Mainnet</h2></header>
-          <p class="dlg__lede">Your page builds an asset lock from your funding address, sends it, and proposes the identity. Once enough members sign and you create it, the locked DASH becomes the identity's balance, less a creation cost of about 0.001 DASH. Until then the lock can only become an identity, and only your seed phrase can use it.</p>
+          <p class="dlg__lede">Your page builds an asset lock from your funding address, sends it, and proposes the identity. Once enough members sign and you create it, the locked DASH becomes the identity's balance, less a creation cost of about 0.001 DASH. Until then the lock is held for creating or topping up an identity, and only your seed phrase can use it.</p>
           ${mainnetGate(`This spends ${esc(expect)} DASH from your address, plus a small network fee.${body.newLock ? '' : ' If an earlier unused lock of yours is found, that lock is used instead, at its own amount, and nothing new is spent.'}`, expect)}
           <div class="dh-actions dh-actions--end dlg__foot"><button class="dh-btn" data-action="close">Not now</button><button class="dh-btn dh-btn--destructive" data-action="fund-confirmed" data-network="${esc(c.network)}" data-cid="${esc(c.cid)}" data-duffs="${body.duffs}" data-newlock="${body.newLock ? 1 : 0}" data-expect="${esc(expect)}">Lock real DASH</button></div>`);
         return;
