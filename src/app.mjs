@@ -77,8 +77,8 @@ export class Session {
     if (room) this.useRoom(room, relay);
   }
 
-  useRoom(room, relay) {
-    this.data = loadRoom(room) ?? openRoom(room, { relay });
+  useRoom(room, relay, label) {
+    this.data = loadRoom(room) ?? openRoom(room, { relay, label });
     if (relay) this.data.relay = relay;
   }
 
@@ -117,8 +117,8 @@ export class Session {
     return this.joinRoom({ room, relay, name });
   }
 
-  async joinRoom({ room, relay, name }) {
-    this.useRoom(room, relay);
+  async joinRoom({ room, relay, name, label }) {
+    this.useRoom(room, relay, label);
     await this.sync();
     const mine = this.state().hellos[this.keys.authPub];
     if (!mine || mine.name !== name) await this.post([participant.hello(this.keys, room, name)]);
@@ -150,7 +150,7 @@ export class Session {
   proposalSummary(s, p) {
     return {
       id: p.id, at: p.at, status: p.status, error: p.error, type: p.body.intent?.type, network: p.body.network,
-      proposer: s.hellos[p.from]?.name ?? p.from.slice(0, 12), summary: safeDescribe(p.body.intent), note: p.body.note,
+      proposer: s.hellos[p.from]?.name ?? p.from.slice(0, 12), summary: safeDescribe(p.body.intent), note: p.body.note, intent: p.body.intent,
       requirements: p.requirements.map((r) => ({ key: r.key, slot: r.slot, threshold: r.threshold, approvals: Object.keys(r.shares).map(Number), invalid: r.invalidShares })),
       approvedByMe: Object.hasOwn(p.approvals, this.keys.authPub), rejections: Object.entries(p.rejections).map(([k, v]) => ({ by: s.hellos[k]?.name ?? k.slice(0, 12), reason: v.reason })),
       broadcasts: p.broadcasts.map((b) => ({ at: b.at, by: s.hellos[b.from]?.name ?? b.from.slice(0, 12), ok: b.result.ok === true, error: typeof b.result.error === 'string' ? b.result.error : undefined, stHash: typeof b.result.stHash === 'string' ? b.result.stHash : undefined })), derived: p.body.derived,
@@ -227,6 +227,12 @@ export class Session {
       if (r.action.startsWith('wait')) await sleep(pollMs);
     }
     throw new Error('ceremony timed out');
+  }
+
+  async networkStatus(network) {
+    const sdk = await this.sdk(network);
+    const j = (await retry(() => sdk.system.status())).toJSON();
+    return { network, protocolVersion: j.version?.protocol?.drive?.current ?? null, height: j.chain?.latestBlockHeight ?? null, coreChainLockedHeight: j.chain?.coreChainLockedHeight ?? null, drive: j.version?.software?.drive ?? null };
   }
 
   funding(network) {

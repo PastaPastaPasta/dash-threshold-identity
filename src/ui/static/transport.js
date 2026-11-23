@@ -2,6 +2,8 @@ const token = new URLSearchParams(location.hash.slice(1)).get('token') ?? sessio
 if (token) sessionStorage.setItem('dti-token', token);
 history.replaceState(null, '', location.pathname);
 
+export const platform = { hosted: false, networks: ['testnet', 'mainnet', 'local'], relayField: true, invite: null, inviteUrl: null };
+
 export async function api(method, path, body) {
   if (!token) throw new Error('Open the URL that `dti ui` printed; it carries this session\'s token.');
   const url = method === 'GET' && body ? `${path}?${new URLSearchParams(body)}` : path;

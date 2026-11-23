@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Multisig · dashhq</title>
+  <meta name="referrer" content="no-referrer">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <script src="dashhq/dashhq-shell.js"></script>
+  <link rel="preload" href="dashhq/fonts/archivo-latin-var.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="dashhq/dashhq-tokens.css">
+  <link rel="stylesheet" href="dashhq/dashhq-shell.css">
+  <link rel="stylesheet" href="dashhq/dashhq-components.css">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="web.css">
+  <script type="module" src="main.js"></script>
+</head>
+<body class="dh-fill">
+  <dashhq-bar product="multisig" product-name="Multisig" network="testnet" networks="mainnet testnet" sticky>
+    <img slot="logo" src="icon.svg" alt="" width="22" height="22">
+    <div slot="actions"><button id="lock" class="dh-btn dh-btn--sm" type="button" data-unlocked hidden>Lock</button></div>
+  </dashhq-bar>
+  <p class="strip" role="note"><strong>Testnet only.</strong> Practice money. Your seed phrase stays in this tab and is gone when you close it.</p>
+  <main id="bad-network" class="landing landing--single" hidden>
+    <section><h1 class="landing__title">This network isn't known</h1><p class="lede">The address asks for network "<code id="bad-network-name"></code>". Use Mainnet, Testnet, a devnet name, or Local.</p><p><a class="dh-btn dh-btn--primary" href="?network=testnet">Open Testnet</a></p></section>
+  </main>
+  <main id="landing" class="landing">
+    <section class="landing__intro">
+      <h1 class="landing__title">Run a Dash identity as a group</h1>
+      <p class="lede">A multisig identity belongs to a group instead of one person. The members make its keys together, and it only acts when enough of them sign: two of three, three of five, whatever the group chooses. Nobody ever holds a whole key, not even this site.</p>
+      <figure class="demo" aria-label="Example: two of three members have signed, which is enough">
+        <ol class="quorum">
+          <li class="seat seat--on"><span class="seat__disc" aria-hidden="true">A</span><span class="seat__name">Ana</span><span class="seat__state">signed</span></li>
+          <li class="seat seat--on"><span class="seat__disc" aria-hidden="true">B</span><span class="seat__name">Ben</span><span class="seat__state">signed</span></li>
+          <li class="seat"><span class="seat__disc" aria-hidden="true">C</span><span class="seat__name">Cho</span><span class="seat__state">not needed</span></li>
+        </ol>
+        <figcaption class="quorum__rule"><span class="quorum__count">2 signed</span>, 2 needed. Enough to send it.</figcaption>
+      </figure>
+      <h2 class="how__title">How it works</h2>
+      <ol class="how">
+        <li><strong>Start a group</strong> and send the invite link to the other members.</li>
+        <li><strong>Check fingerprints</strong> with each other on a call, so you know who joined.</li>
+        <li><strong>Make the keys together.</strong> Each page creates its member's share; nobody sees the others.</li>
+        <li><strong>Fund the identity.</strong> One member locks testnet DASH, and the group signs its creation.</li>
+        <li><strong>Propose and sign.</strong> Payments, documents and key changes go out once enough members sign.</li>
+      </ol>
+    </section>
+    <section class="landing__unlock">
+      <form id="devnet-form" class="panel devnet" hidden>
+        <div class="dh-field"><label class="dh-field__label" for="devnet-name">Devnet name</label><div class="dh-input-group"><span class="dh-input-group__addon">devnet-</span><input class="dh-input" id="devnet-name" autocomplete="off" spellcheck="false" required></div>
+        <p class="dh-field__help">Its nodes are found through quorums.&lt;name&gt;.networks.dash.org.</p><p id="devnet-error" class="dh-field__error" hidden>Use lowercase letters, digits and hyphens.</p></div>
+        <button class="dh-btn">Open this devnet</button>
+      </form>
+      <form id="form-unlock" class="panel" autocomplete="off">
+        <div class="net-pick">
+          <p class="net-pick__now">Network: <strong id="net-now">Testnet</strong></p>
+          <nav class="nets dh-seg" aria-label="Network">
+            <a data-net="testnet" href="?network=testnet">Testnet</a>
+            <a data-net="mainnet" href="?network=mainnet">Mainnet</a>
+            <a data-net="devnet" href="?network=testnet&amp;pick-devnet=1">Devnet</a>
+            <a data-net="local" href="?network=local">Local</a>
+          </nav>
+          <p class="note">Each network has its own groups. A group made on one network can't be opened on another.</p>
+        </div>
+        <h2 class="panel__title">Use your seed phrase</h2>
+        <p class="muted">Everything you hold in the group comes from this phrase. Each member uses their own.</p>
+        <div class="dh-field">
+          <label class="dh-field__label" for="unlock-mnemonic">Seed phrase, 12 or 24 words</label>
+          <p class="dh-field__help">Use a phrase made for this group. Never paste the recovery phrase of a wallet that holds funds.</p>
+          <textarea class="dh-textarea dh-input--mono" id="unlock-mnemonic" name="mnemonic" rows="3" spellcheck="false" autocapitalize="off" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore required></textarea>
+        </div>
+        <p id="unlock-generated" class="dh-notice dh-notice--warn" hidden>A new phrase was made in this tab. Write it down now: you need it to come back to your group, and this page will forget it.</p>
+        <details class="dh-disclosure"><summary><span>BIP39 passphrase (optional)</span></summary><input class="dh-input masked" name="passphrase" type="text" autocomplete="off" spellcheck="false" autocapitalize="off" data-1p-ignore data-lpignore="true" data-bwignore aria-label="BIP39 passphrase"></details>
+        <fieldset id="local-settings" class="dh-fieldset local" hidden>
+          <legend class="dh-field__label">Your local network</legend>
+          <div class="dh-field"><label class="dh-field__label" for="local-insight">Insight API</label><input class="dh-input dh-input--mono" id="local-insight" autocomplete="off" spellcheck="false"></div>
+          <div class="dh-field"><label class="dh-field__label" for="local-quorums">Quorum service</label><input class="dh-input dh-input--mono" id="local-quorums" autocomplete="off" spellcheck="false"><p class="dh-field__help">The Platform nodes are found through the quorum service; this page can only reach this computer on Local.</p></div>
+        </fieldset>
+        <p id="unlock-error" class="dh-notice dh-notice--error" hidden></p>
+        <div class="dh-actions"><button class="dh-btn dh-btn--primary">Continue</button><button type="button" class="dh-btn" id="unlock-generate">I need a new phrase</button></div>
+        <details class="dh-disclosure facts"><summary><span>What happens to the phrase</span></summary>
+          <ul>
+            <li>Your member keys, your key shares and your testnet funding address are derived from it, in this tab.</li>
+            <li>The relay only passes signed messages between members. Key shares travel encrypted to their owner.</li>
+            <li>Nothing is saved. Come back later by entering the same phrase and joining the same group.</li>
+            <li>Use a phrase made for this group, never one that holds funds.</li>
+          </ul>
+        </details>
+        <p class="build">Build <code>__BUNDLE_HASH__</code>. <a class="dh-link" href="https://github.com/PastaPastaPasta/dash-threshold-identity/blob/main/docs/VERIFY.md">How to check it</a></p>
+      </form>
+    </section>
+  </main>
+  <main id="app" data-unlocked hidden></main>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <dialog id="dialog" aria-label="Details"></dialog>
+  <dashhq-footer product="multisig" source="https://github.com/PastaPastaPasta/dash-threshold-identity"><a href="https://github.com/PastaPastaPasta/dash-threshold-identity/blob/main/docs/PROTOCOL.md">Protocol</a> <a href="https://github.com/PastaPastaPasta/dash-threshold-identity/blob/main/docs/VERIFY.md" title="Bundle sha256 __BUNDLE_HASH__">Build __BUNDLE_HASH_SHORT__</a></dashhq-footer>
+</body>
+</html>
