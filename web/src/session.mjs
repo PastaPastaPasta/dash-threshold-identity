@@ -20,6 +20,10 @@ export class NetworkSession extends Session {
     assert(!this.readOnly, `${what} is turned off on Mainnet in this build; Mainnet is read-only here until it has been reviewed`);
   }
 
+  confirmed(what, options) {
+    assert(this.network !== 'mainnet' || options?.confirmMainnet === true, `${what} on Mainnet uses real DASH; confirm it explicitly`);
+  }
+
   checkRoom(room) {
     if (!roomOnNetwork(room, this.network)) {
       const other = roomNetwork(room);
@@ -88,6 +92,7 @@ export class NetworkSession extends Session {
 
   async approve(proposalId, options) {
     this.writable('Signing');
+    this.confirmed('Signing', options);
     return super.approve(proposalId, options);
   }
 
@@ -96,8 +101,9 @@ export class NetworkSession extends Session {
     return super.reject(proposalId, reason);
   }
 
-  async execute(proposalId) {
+  async execute(proposalId, options) {
     this.writable('Broadcasting');
+    this.confirmed('Broadcasting', options);
     return super.execute(proposalId);
   }
 

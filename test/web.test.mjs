@@ -148,6 +148,13 @@ test('mainnet is read only unless the build turns writes on', async (t) => {
   const w = new NetworkSession({ ...phrase, relay, network: 'mainnet', mainnetWrites: true });
   w.useRoom(room);
   await assert.rejects(w.assetLock('mainnet', { duffs: 1000000 }), /confirm it explicitly/);
+  await assert.rejects(w.approve('x'), /Signing on Mainnet uses real DASH; confirm it explicitly/);
+  await assert.rejects(w.execute('x'), /Broadcasting on Mainnet uses real DASH; confirm it explicitly/);
+  await assert.rejects(w.approve('x', { confirmMainnet: true }), (e) => !/confirm it explicitly|turned off/.test(e.message));
+  attach(w);
+  await assert.rejects(api('POST', '/api/approve', { id: 'x' }), /confirm it explicitly/);
+  await assert.rejects(api('POST', '/api/execute', { id: 'x' }), /confirm it explicitly/);
+  await assert.rejects(api('POST', '/api/execute', { id: 'x', confirmMainnet: true }), (e) => !/confirm it explicitly/.test(e.message));
   await assert.rejects(w.proposeCeremony({ threshold: 2, label: 'k', members }), /at least|threshold|participants|members/i);
 });
 

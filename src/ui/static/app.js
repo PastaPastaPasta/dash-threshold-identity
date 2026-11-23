@@ -93,6 +93,20 @@ const dashOfDuffs = (duffs) => (Number(duffs) / DUFFS_PER_DASH).toLocaleString('
 const unit = (network) => (network === 'mainnet' ? 'DASH' : 'tDASH');
 const readOnly = () => Boolean(platform.readOnly);
 const READ_ONLY = 'Mainnet is read only in this build. You can open groups, compare fingerprints and check balances; making keys, signing and funding are turned off until they have been reviewed.';
+const onMainnet = () => platform.network === 'mainnet';
+const expectOf = (intent) => (typeof intent?.amount === 'string' && dashOfCredits(intent.amount) !== '?' ? dashOfCredits(intent.amount) : 'mainnet');
+function mainnetGate(what, expect) {
+  return `<div class="dh-notice dh-notice--error mainnet-gate"><p><strong>Mainnet, real DASH.</strong> ${what} This cannot be undone.</p>
+    <div class="dh-field"><label class="dh-field__label" for="mn-confirm">Type <code>${esc(expect)}</code> to confirm</label><input class="dh-input" id="mn-confirm" autocomplete="off" autocapitalize="off" spellcheck="false"></div></div>`;
+}
+function gatePassed(expect) {
+  if (!onMainnet()) return true;
+  const field = $('#mn-confirm');
+  if (field?.value.trim() === expect) return true;
+  say(`Type ${expect} exactly to confirm`, 'bad');
+  field?.focus();
+  return false;
+}
 const readOnlyNote = () => `<div class="dh-notice dh-notice--info readonly"><p>${READ_ONLY}</p></div>`;
 const ago = (iso) => {
   const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000);
@@ -440,6 +454,7 @@ function identityView() {
       ${f ? `<p class="address"><code class="wrap">${esc(f.address)}</code> <button class="dh-btn dh-btn--sm" data-action="copy" data-text="${esc(f.address)}">Copy</button></p>
         <p>Balance: <strong>${esc(dashOfDuffs(f.duffs))} ${unit(net)}</strong> <button class="dh-btn dh-btn--sm dh-btn--quiet" data-action="funding">Refresh</button></p>`
         : `<div class="dh-loading" role="status"><span class="dh-spin" aria-hidden="true"></span>Reading your address and balance…</div>`}
+      ${net === 'mainnet' ? '<p class="note mainnet-warn"><strong>Mainnet, real DASH.</strong> Your seed phrase controls this address, and this page can read it. Send only what you are about to lock, and never use a phrase here that holds other funds.</p>' : ''}
       ${net === 'testnet' ? `<p><a class="dh-link" href="https://faucet.dashhq.org/?network=testnet" target="_blank" rel="noopener noreferrer">Get testnet DASH from the faucet ↗</a> Paste your address there, then refresh.</p>` : ''}
     </div>
     ${readOnly() ? readOnlyNote() : fundForm(net, f, enough)}`;
@@ -722,15 +737,24 @@ function reviewDialog(r, offerSign) {
     ${r.problems.length ? `<div class="dh-notice dh-notice--error"><p><strong>Why not to sign</strong></p><ul>${r.problems.map((p) => `<li>${esc(p)}</li>`).join('')}</ul></div>` : ''}
     <details class="dh-disclosure"><summary><span>The exact transaction your share signs (${esc(r.decoded?.action ?? 'decoded')})</span></summary><pre>${esc(JSON.stringify(r.decoded?.json, null, 2))}</pre></details>
     <details class="dh-disclosure"><summary><span>The proposal as written</span></summary><pre>${esc(JSON.stringify(r.intent, null, 2))}</pre></details>
+    ${offerSign && r.ok && onMainnet() ? mainnetGate(typeof r.intent?.amount === 'string' ? `Your signature lets the group send ${esc(dashOfCredits(r.intent.amount))} DASH to <code>${esc(r.intent.recipientId ?? r.intent.outputAddress ?? '')}</code>.` : `Your signature authorises this change to the group's Mainnet identity.`, expectOf(r.intent)) : ''}
     ${offerSign && r.ok ? `<form class="reject" id="form-reject" data-form="reject" data-id="${esc(r.id)}" hidden><div class="dh-field"><label class="dh-field__label" for="reject-reason">Why are you rejecting it?</label><input class="dh-input" id="reject-reason" name="reason" required></div><div class="dh-actions"><button class="dh-btn dh-btn--destructive">Reject proposal</button></div></form>` : ''}
     <div class="dh-actions dh-actions--end dlg__foot">
       ${offerSign ? '<button class="dh-btn dh-btn--quiet" data-action="show-reject">Reject…</button>' : ''}
       <button class="dh-btn" data-action="close">${offerSign && r.ok ? 'Not now' : 'Close'}</button>
-      ${offerSign && r.ok ? `<button class="dh-btn dh-btn--primary" data-action="sign" data-id="${esc(r.id)}" data-ack="${r.attention?.length ? 1 : 0}">Sign with my share</button>` : ''}
+      ${offerSign && r.ok ? `<button class="dh-btn dh-btn--primary" data-action="sign" data-id="${esc(r.id)}" data-expect="${esc(expectOf(r.intent))}" data-ack="${r.attention?.length ? 1 : 0}">Sign with my share</button>` : ''}
     </div>`);
 }
 
 /* ---------------------------------------------------------------- events */
+
+const fund = (body) => act('Lock and propose the identity', () => api('POST', '/api/identity/create', body), { pending: 'Locking funds and waiting for the network to confirm it. This takes one to three minutes; keep this page open.', done: 'Identity proposed. The others can sign it now.' });
+const broadcast = (id) => act('Broadcast', async () => {
+  const r = await api('POST', '/api/execute', { id, confirmMainnet: onMainnet() });
+  if (!r.ok) throw new Error(r.error);
+  if (idInfo) idInfo.readAt = 0;
+  return r;
+}, { pending: 'Combining the signatures and sending the transaction to Platform…', done: 'Done on Platform' });
 
 const enteredGroup = () => { view = null; picking = false; funding = null; platform.invite = null; platform.inviteLabel = null; };
 
@@ -797,10 +821,14 @@ document.addEventListener('submit', (e) => {
       const c = ceremony();
       const body = { cid: c.cid, duffs: Math.round(amount * DUFFS_PER_DASH), newLock: f.newLock === 'on' };
       if (c.network === 'mainnet') {
-        if (prompt(`This locks ${amount} DASH of real money on mainnet. Type "mainnet" to continue.`) !== 'mainnet') return;
-        body.confirmMainnet = true;
+        const expect = dashOfDuffs(body.duffs).replace(/,/g, '');
+        showDialog(`<header class="dlg__head"><h2 class="dlg__title">Lock ${esc(expect)} DASH on Mainnet</h2></header>
+          <p class="dlg__lede">Your page builds an asset lock from your funding address, sends it, and proposes the identity. The locked DASH becomes the identity's balance once enough members sign. Until then it can only be used for this identity.</p>
+          ${mainnetGate(`This spends ${esc(expect)} DASH from your address, plus a small network fee.${body.newLock ? '' : ' If an earlier unused lock of yours is found, that lock is used instead and nothing new is spent.'}`, expect)}
+          <div class="dh-actions dh-actions--end dlg__foot"><button class="dh-btn" data-action="close">Not now</button><button class="dh-btn dh-btn--destructive" data-action="fund-confirmed" data-cid="${esc(c.cid)}" data-duffs="${body.duffs}" data-newlock="${body.newLock ? 1 : 0}" data-expect="${esc(expect)}">Lock real DASH</button></div>`);
+        return;
       }
-      act('Lock and propose the identity', () => api('POST', '/api/identity/create', body), { pending: 'Locking funds and waiting for the network to confirm it. This takes one to three minutes; keep this page open.', done: 'Identity proposed. The others can sign it now.' });
+      fund(body);
       break;
     }
     case 'propose': {
@@ -892,13 +920,31 @@ document.addEventListener('click', (e) => {
     }, { done: 'Read from Platform' }); break;
     case 'review': act('Review', async () => reviewDialog(await api('GET', '/api/review', { id: b.dataset.id }), b.dataset.sign === '1'), { pending: 'Rebuilding the transaction and checking it against Platform…', done: 'Review ready' }); break;
     case 'show-reject': { const f = $('#form-reject'); if (f) { f.hidden = false; $('#reject-reason').focus(); } break; }
-    case 'sign': dialog.close(); act('Sign', () => api('POST', '/api/approve', { id: b.dataset.id, acknowledgeKeys: b.dataset.ack === '1' }), { done: 'Signed with your share' }); break;
-    case 'execute': act('Broadcast', async () => {
-      const r = await api('POST', '/api/execute', { id: b.dataset.id });
-      if (!r.ok) throw new Error(r.error);
-      if (idInfo) idInfo.readAt = 0;
-      return r;
-    }, { pending: 'Combining the signatures and sending the transaction to Platform…', done: 'Done on Platform' }); break;
+    case 'sign':
+      if (!gatePassed(b.dataset.expect)) break;
+      dialog.close();
+      act('Sign', () => api('POST', '/api/approve', { id: b.dataset.id, acknowledgeKeys: b.dataset.ack === '1', confirmMainnet: onMainnet() }), { done: 'Signed with your share' });
+      break;
+    case 'execute': {
+      if (!onMainnet()) { broadcast(b.dataset.id); break; }
+      const p = proposals().find((x) => x.id === b.dataset.id);
+      const expect = expectOf(p?.intent);
+      showDialog(`<header class="dlg__head"><h2 class="dlg__title">Send on Mainnet</h2></header>
+        ${facts(p?.intent, { full: true })}
+        ${mainnetGate(typeof p?.intent?.amount === 'string' ? `This sends ${esc(expect)} DASH to <code>${esc(p.intent.recipientId ?? p.intent.outputAddress ?? '')}</code>.` : 'This broadcasts the signed change to the Mainnet identity.', expect)}
+        <div class="dh-actions dh-actions--end dlg__foot"><button class="dh-btn" data-action="close">Not now</button><button class="dh-btn dh-btn--destructive" data-action="execute-confirmed" data-id="${esc(b.dataset.id)}" data-expect="${esc(expect)}">Send on Mainnet</button></div>`);
+      break;
+    }
+    case 'execute-confirmed':
+      if (!gatePassed(b.dataset.expect)) break;
+      dialog.close();
+      broadcast(b.dataset.id);
+      break;
+    case 'fund-confirmed':
+      if (!gatePassed(b.dataset.expect)) break;
+      dialog.close();
+      fund({ cid: b.dataset.cid, duffs: Number(b.dataset.duffs), newLock: b.dataset.newlock === '1', confirmMainnet: true });
+      break;
     default:
   }
 });
