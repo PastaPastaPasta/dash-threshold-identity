@@ -148,6 +148,13 @@ test('mainnet is read only unless the build turns writes on', async (t) => {
   const w = new NetworkSession({ ...phrase, relay, network: 'mainnet', mainnetWrites: true });
   w.useRoom(room);
   await assert.rejects(w.assetLock('mainnet', { duffs: 1000000 }), /confirm it explicitly/);
+  await assert.rejects(w.approve('x'), /Signing on Mainnet uses real DASH; confirm it explicitly/);
+  await assert.rejects(w.execute('x'), /Broadcasting on Mainnet uses real DASH; confirm it explicitly/);
+  await assert.rejects(w.approve('x', { confirmMainnet: true }), (e) => !/confirm it explicitly|turned off/.test(e.message));
+  attach(w);
+  await assert.rejects(api('POST', '/api/approve', { id: 'x' }), /confirm it explicitly/);
+  await assert.rejects(api('POST', '/api/execute', { id: 'x' }), /confirm it explicitly/);
+  await assert.rejects(api('POST', '/api/execute', { id: 'x', confirmMainnet: true }), (e) => !/confirm it explicitly/.test(e.message));
   await assert.rejects(w.proposeCeremony({ threshold: 2, label: 'k', members }), /at least|threshold|participants|members/i);
 });
 
@@ -225,4 +232,13 @@ test('claiming to pay needs finished group keys', async (t) => {
   const s = new NetworkSession({ ...phrase, relay, network: 'testnet' });
   await s.createRoom({ label: 'claims', name: 'p1' });
   await assert.rejects(s.claimFunding('ab'.repeat(32)), /ceremony|not ready|unknown|no such/i);
+});
+
+test('the base session also asks for an explicit confirmation before signing or sending on Mainnet', async (t) => {
+  const s = new Session(phrase);
+  t.mock.method(Session.prototype, 'review', async () => ({ ok: true, problems: [], proposal: { network: 'mainnet', approvedByMe: false } }));
+  t.mock.method(Session.prototype, 'sync', async () => {});
+  t.mock.method(Session.prototype, 'findProposal', () => ({ s: {}, p: { id: 'a'.repeat(64), status: 'ready', body: { network: 'mainnet', intent: {} } } }));
+  await assert.rejects(s.approve('a'), /signs a Mainnet transition; confirm it explicitly/);
+  await assert.rejects(s.execute('a'), /broadcasts a Mainnet transition; confirm it explicitly/);
 });

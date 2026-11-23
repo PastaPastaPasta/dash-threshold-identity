@@ -41,10 +41,10 @@ An optional BIP39 passphrase comes from DTI_PASSPHRASE or --passphrase-file.
   dti propose update-identity [--add CID/SLOT,..] [--disable KEYID,..] [--signer master]
        (all propose commands take [--identity ID] [--fee-increase N] [--note TEXT])
   dti review PROPOSAL                          rebuild, decode and check a proposal
-  dti approve PROPOSAL [--yes] [--offline]     review, then contribute your signature share
+  dti approve PROPOSAL [--yes] [--offline]     review, then contribute your signature share (mainnet: --confirm-mainnet)
        (--accept-new-keys: required when the proposal puts keys under a ceremony's control)
   dti reject PROPOSAL --reason TEXT
-  dti execute PROPOSAL                         combine the shares and broadcast
+  dti execute PROPOSAL                         combine the shares and broadcast (mainnet: --confirm-mainnet)
 
   dti relay serve [--port 8787] [--host 127.0.0.1] [--dir DIR] [--limits]
   dti ui [--port 8770]                         local web UI (served on 127.0.0.1 only)
@@ -192,9 +192,9 @@ export async function main(argv) {
       break;
     }
     case 'review': { const s = await session(v); return print(await s.review(sub, { online: !v.offline }), true); }
-    case 'approve': { const s = await session(v); return print(await s.approve(sub, { confirm: confirmApproval(v.yes), online: !v.offline, acknowledgeKeys: Boolean(v['accept-new-keys']) }), true); }
+    case 'approve': { const s = await session(v); return print(await s.approve(sub, { confirm: confirmApproval(v.yes), online: !v.offline, acknowledgeKeys: Boolean(v['accept-new-keys']), confirmMainnet: Boolean(v['confirm-mainnet']) }), true); }
     case 'reject': { const s = await session(v); return print(await s.reject(sub, v.reason ?? ''), true); }
-    case 'execute': { const s = await session(v); return print(await s.execute(sub), true); }
+    case 'execute': { const s = await session(v); return print(await s.execute(sub, { confirmMainnet: Boolean(v['confirm-mainnet']) }), true); }
     case 'relay': {
       if (sub === 'serve') {
         const port = Number(v.port ?? 8787);

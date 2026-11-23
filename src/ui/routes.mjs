@@ -27,8 +27,8 @@ export function routes(session) {
     'GET /api/identity': async (b) => session.showIdentity(b.identityId),
     'POST /api/propose': async (b) => session.prepare(b.kind, b.args ?? {}),
     'GET /api/review': async (b) => session.review(b.id),
-    'POST /api/approve': async (b) => session.approve(b.id, { confirm: async () => true, acknowledgeKeys: b.acknowledgeKeys === true }),
+    'POST /api/approve': async (b) => session.approve(b.id, { confirm: async () => true, acknowledgeKeys: b.acknowledgeKeys === true, confirmMainnet: b.confirmMainnet === true }),
     'POST /api/reject': async (b) => session.reject(b.id, b.reason ?? ''),
-    'POST /api/execute': async (b) => session.execute(b.id),
+    'POST /api/execute': async (b) => session.execute(b.id, { confirmMainnet: b.confirmMainnet === true }),
   };
 }

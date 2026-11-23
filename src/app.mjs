@@ -506,8 +506,9 @@ export class Session {
     return { id: p.id, proposer: s.hellos[p.from]?.name, ...report, proposal: this.proposalSummary(s, p), intent: p.body.intent };
   }
 
-  async approve(proposalId, { confirm = async () => true, online = true, acknowledgeKeys = false } = {}) {
+  async approve(proposalId, { confirm = async () => true, online = true, acknowledgeKeys = false, confirmMainnet = false } = {}) {
     const report = await this.review(proposalId, { online });
+    assert(report.proposal?.network !== 'mainnet' || confirmMainnet, 'this signs a Mainnet transition; confirm it explicitly (--confirm-mainnet)');
     assert(report.ok, `refusing to approve: ${report.problems.join('; ')}`);
     assert(!report.proposal.approvedByMe, 'you already approved this proposal');
     assert(!report.attention.length || acknowledgeKeys, `this proposal puts keys under a group's control; review who holds them and approve again acknowledging that:\n${report.attention.join('\n')}`);
@@ -522,9 +523,10 @@ export class Session {
     return { id: p.id, rejected: true };
   }
 
-  async execute(proposalId) {
+  async execute(proposalId, { confirmMainnet = false } = {}) {
     await this.sync();
     const { s, p } = this.findProposal(proposalId);
+    assert(p.body.network !== 'mainnet' || confirmMainnet, 'this broadcasts a Mainnet transition; confirm it explicitly (--confirm-mainnet)');
     assert(p.status === 'ready' || p.status === 'executed', `proposal is ${p.status}`);
     const signatures = participant.combine(s, p.id);
     const built = await signedTransition(s, p.id, signatures);
