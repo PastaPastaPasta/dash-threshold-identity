@@ -4,11 +4,12 @@ import { network as networkOf, roomOnNetwork, roomPrefix, roomNetwork } from '..
 import { openRoom } from '../../src/store.mjs';
 
 export class NetworkSession extends Session {
-  constructor({ relay, network, mainnetWrites = false, ...rest }) {
+  constructor({ relay, network, mainnetWrites = false, room, ...rest }) {
     super(rest);
     this.relay = relay;
     this.network = networkOf(network).id;
     this.readOnly = this.network === 'mainnet' && !mainnetWrites;
+    if (room) this.useRoom(room, relay);
   }
 
   onNetwork(network, what) {

@@ -27,7 +27,7 @@ Proven so far: live read-only checks on Mainnet (Platform connect at block 477,6
 - A member's seed phrase is typed into the page, and every secret is derived from it in the tab: the member's message and transport keys, their DKG polynomial, their key shares and their Core funding key. Nothing secret is stored or sent.
 - No process ever holds a group key. A share signs only bytes the member's own page rebuilt from the proposal it shows.
 - The weak point is the page itself. Code served from a domain can read a phrase as it is typed. On Mainnet, one compromised deploy that every member uses could collect *t* phrases over time, which is enough to take the identity.
-- The Core funding key is the most direct risk: it moves DASH by itself, with no threshold.
+- The Core funding key is the most direct risk: it moves DASH by itself, with no threshold. The page derives it from the member's phrase, so any DASH sent to a phrase that is ever typed into the page is exposed to that page, whoever builds the asset lock.
 
 **The relay.**
 - The relay is untrusted. It sees every public message, cannot read encrypted shares, and cannot forge or alter messages. At worst it withholds them, which stalls a ceremony or proposal.
@@ -53,7 +53,7 @@ Proven so far: live read-only checks on Mainnet (Platform connect at block 477,6
 | D6 | DAPI reachability and CSP | discovered evonodes on any HTTPS host (now); a DAPI gateway on named hosts | **A DAPI gateway on named hosts** for Mainnet (for example `dapi.mainnet.networks.dash.org`), so the Mainnet `connect-src` can drop `https://*:443`. Until then, D1(b) is the safer way to use Mainnet. |
 | D7 | Relay | the shared Worker (now); a separate Mainnet relay; members bring their own | **A separate Mainnet relay Worker** with its own limits and retention. Bundles stay available as a fallback. |
 | D8 | Relay retention | forever (now); N days after the last message | **180 days after the last message**, stated in the page. Members need the log to rebuild shares; anyone who needs longer keeps an exported bundle. |
-| D9 | Funding on Mainnet | seed-derived Core key in the page; the CLI; an external wallet or hardware signer | **Not in the hosted page.** The funder builds the asset lock with the CLI, or later with an external signer. The page signs only threshold transitions, so a compromised page can't move the funder's DASH. |
+| D9 | Funding on Mainnet | seed-derived Core key in the page; the CLI; an external wallet or hardware signer | **Not in the hosted page, and not from a phrase that ever enters it.** The funder builds the asset lock with the CLI from a separate funding phrase, or later with an external signer whose keys never enter the browser. Member phrases typed into the page must hold no funds. The page signs only threshold transitions. |
 | D10 | Mainnet confirmation | none; a typed confirmation per transition | **A typed confirmation before every Mainnet signature and broadcast**, naming the amount and recipient, like the CLI's `--confirm-mainnet`. |
 | D11 | Who may use it first | anyone; invited groups; Pasta's own groups | **Pasta's own groups**, with small balances, for one release cycle. |
 
@@ -63,7 +63,7 @@ Each item needs an owner and evidence: a PR, a review or a run.
 
 **Code and review**
 - [ ] An independent security review of the browser build, `NetworkSession`, the Worker and the relay, by someone who didn't write them, including the threshold signing paths ([PROTOCOL.md](PROTOCOL.md)).
-- [ ] D9 and D10 implemented: no Mainnet asset locks from the page, and a typed confirmation before each Mainnet signature and broadcast.
+- [ ] D9 and D10 implemented: no Mainnet asset locks from the page; Mainnet funding uses a phrase or signer that never enters the browser, and the page says member phrases must hold no funds; a typed confirmation before each Mainnet signature and broadcast.
 - [ ] D6 decided. If a gateway exists, the Mainnet CSP names only it, Insight and the quorum service, and a test checks the CSP has no wildcard host.
 - [ ] The release is built from a tagged commit, reproduced on a second machine, and its page hash published in signed release notes (D5).
 

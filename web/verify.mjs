@@ -42,6 +42,10 @@ if (arg === '--readme' || arg === '--write-readme') {
   };
   const page = await get('');
   if (!page.bytes.equals(indexHtml)) failures.push(`index.html differs from the local build (live sha256 ${sha256(page.bytes)})`);
+  for (const name of UNEXPECTED) if (page.response.headers.has(name)) failures.push(`unexpected header ${name}`);
+  for (const [name, value] of Object.entries(securityFor())) {
+    if (page.response.headers.get(name) !== value) failures.push(`header ${name} is "${page.response.headers.get(name)}", expected "${value}"`);
+  }
   for (const network of NETWORK_SAMPLES) {
     const view = await get(`?network=${network}`);
     if (!view.bytes.equals(indexHtml)) failures.push(`index.html for ${network} differs from the local build`);

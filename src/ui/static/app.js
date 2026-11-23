@@ -77,7 +77,7 @@ const dashOfCredits = (credits) => {
   if (c === null) return '?';
   const whole = c / CREDITS_PER_DASH;
   const frac = (c % CREDITS_PER_DASH).toString().padStart(11, '0').replace(/0+$/, '');
-  return frac ? `${whole}.${frac.slice(0, 8)}` : `${whole}`;
+  return frac ? `${whole}.${frac}` : `${whole}`;
 };
 const dashOfDuffs = (duffs) => (Number(duffs) / DUFFS_PER_DASH).toLocaleString('en-US', { maximumFractionDigits: 8 });
 const unit = (network) => (network === 'mainnet' ? 'DASH' : 'tDASH');
@@ -99,6 +99,10 @@ const ceremonies = () => (state?.ceremonies ?? []).filter((c) => onPage(c.networ
 const ceremony = () => {
   const list = ceremonies();
   return list.filter((c) => c.status === 'complete').at(-1) ?? list.filter((c) => c.status !== 'failed').at(-1) ?? list.at(-1) ?? null;
+};
+const laterCeremony = () => {
+  const c = ceremony();
+  return c?.status === 'complete' ? ceremonies().filter((x) => x !== c && !['complete', 'failed'].includes(x.status)).at(-1) ?? null : null;
 };
 const ceremonyOf = (key) => ceremonies().find((c) => c.cid === key.split('/')[0]) ?? null;
 const identity = () => (state?.identities ?? []).filter((i) => onPage(i.network)).at(-1) ?? null;
@@ -293,7 +297,22 @@ function networkPanel() {
 }
 
 function keysView() {
-  const c = ceremony();
+  const later = laterCeremony();
+  return later ? `${ceremonyPanel(later, 'A new key ceremony')}${keysViewFor(ceremony())}` : keysViewFor(ceremony());
+}
+
+function ceremonyPanel(c, title) {
+  const me = c.participants.find((p) => p.index === c.myIndex);
+  const wait = waitingOn(c);
+  return `<section class="step panel">
+    <h2 class="step__title">${esc(title)}</h2>
+    <p class="step__lede">${esc(c.label)}. ${c.threshold} of ${c.participants.length} would sign with these keys, for example after a key rotation.</p>
+    ${seats(c.participants.map((p) => ({ ...p, me: p.index === c.myIndex })), { filled: (p) => p.accepted, label: (p) => (p.completed ? 'done' : p.accepted ? 'accepted' : 'not yet') })}
+    ${me && !me.accepted ? (readOnly() ? readOnlyNote() : acceptPanel(c)) : `<div class="waiting" role="status"><span class="dh-spin" aria-hidden="true"></span><p>${wait ? `Waiting for ${esc(names(wait.missing))} to ${esc(wait.what)}.` : 'Finishing.'}</p></div>`}
+  </section>`;
+}
+
+function keysViewFor(c) {
   const list = members();
   if (!c || c.status === 'failed') {
     const t = Math.max(2, Math.min(list.length, Math.ceil((list.length + 1) / 2)));
@@ -344,7 +363,7 @@ function acceptPanel(c) {
     <ul class="people people--compact">
       ${others.map((p) => {
         const m = members().find((x) => x.fingerprint === p.fingerprint);
-        return `<li class="person"><span class="person__name">${esc(p.name)}</span><code class="fp">${esc(p.fingerprint)}</code><label class="dh-check person__check"><input type="checkbox" id="fp-${p.index}" name="fp" value="${esc(m?.authPub ?? p.fingerprint)}" required${verified.has(m?.authPub ?? p.fingerprint) ? ' checked' : ''}> Matches</label></li>`;
+        return `<li class="person"><span class="person__name">${esc(p.name)}</span><code class="fp">${esc(p.fingerprint)}</code><label class="dh-check person__check"><input type="checkbox" id="fp-${esc(c.cid.slice(0, 16))}-${p.index}" name="fp" value="${esc(m?.authPub ?? p.fingerprint)}" required${verified.has(m?.authPub ?? p.fingerprint) ? ' checked' : ''}> Matches</label></li>`;
       }).join('')}
     </ul>
     <div class="dh-actions"><button class="dh-btn dh-btn--primary">Accept and make my key share</button></div>
@@ -803,6 +822,7 @@ document.addEventListener('click', (e) => {
     case 'execute': act('Broadcast', async () => {
       const r = await api('POST', '/api/execute', { id: b.dataset.id });
       if (!r.ok) throw new Error(r.error);
+      if (idInfo) idInfo.readAt = 0;
       return r;
     }, { pending: 'Combining the signatures and sending the transaction to Platform…', done: 'Done on Platform' }); break;
     default:
@@ -819,7 +839,7 @@ document.addEventListener('click', (e) => {
 async function loadIdentity() {
   idLoading = true;
   try {
-    idInfo = await api('GET', '/api/identity', { identityId: identity().identityId });
+    idInfo = { ...(await api('GET', '/api/identity', { identityId: identity().identityId })), readAt: Date.now() };
   } catch { /* shown as still loading; the next refresh retries */ }
   idLoading = false;
   lastHtml = '';
@@ -829,8 +849,11 @@ async function loadIdentity() {
 async function loadFunding() {
   const c = ceremony();
   if (!c) return;
+  const room = state.room;
   try {
-    funding = await api('GET', '/api/funding', { network: platform.hosted ? platform.network : c.network });
+    const f = await api('GET', '/api/funding', { network: platform.hosted ? platform.network : c.network });
+    if (state.room !== room) return;
+    funding = f;
   } catch (e) {
     say(`Could not read your balance: ${e.message}`, 'bad');
   }
@@ -864,7 +887,7 @@ async function refresh() {
   if (!state.room) view = null;
   const step = state.room ? (view === 'new' ? 'proposals' : view ?? currentStep(stepStatus())) : null;
   if (step === 'identity' && !funding && ceremony()?.status === 'complete' && !identity()) loadFunding();
-  if ((step === 'identity' || step === 'proposals') && identity() && idInfo?.identityId !== identity().identityId && !idLoading) loadIdentity();
+  if ((step === 'identity' || step === 'proposals') && identity() && (idInfo?.identityId !== identity().identityId || Date.now() - idInfo.readAt > 60000) && !idLoading) loadIdentity();
   try {
     render();
   } catch (e) {
