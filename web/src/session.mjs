@@ -40,9 +40,10 @@ export class NetworkSession extends Session {
   }
 
   createRoom({ label, name }) {
-    const room = `${roomPrefix(this.network)}_${sha256hex(`dti-room|${this.network}|${this.keys.authPub}|${label}|${new Date().toISOString()}`).slice(0, 32)}`;
+    const at = new Date().toISOString();
+    const room = `${roomPrefix(this.network)}_${sha256hex(`dti-room|${this.network}|${this.keys.authPub}|${label}|${at}`).slice(0, 32)}`;
     this.data = openRoom(room, { relay: this.relay, label });
-    return this.joinRoom({ room, relay: this.relay, name, group: label });
+    return this.joinRoom({ room, relay: this.relay, name, group: label, groupAt: at });
   }
 
   async proposeCeremony(args) {

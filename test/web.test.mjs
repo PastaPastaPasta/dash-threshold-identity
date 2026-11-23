@@ -138,9 +138,10 @@ test('mainnet is read only unless the build turns writes on', async (t) => {
   await assert.rejects(s.reject('x', 'no'), off);
   await assert.rejects(s.execute('x'), off);
   await assert.rejects(s.topUp({}), off);
+  await assert.rejects(s.claimFunding('x'), off);
   attach(s);
   assert.equal(platform.readOnly, true);
-  for (const [route, body] of [['/api/ceremony/propose', { threshold: 2, label: 'k', members }], ['/api/ceremony/advance', { cid: 'x', accept: true }], ['/api/approve', { id: 'x' }], ['/api/execute', { id: 'x' }], ['/api/reject', { id: 'x', reason: 'no' }], ['/api/propose', { kind: 'credit-transfer', args: {} }], ['/api/identity/create', { cid: 'x', duffs: 1000000 }]]) {
+  for (const [route, body] of [['/api/ceremony/propose', { threshold: 2, label: 'k', members }], ['/api/ceremony/advance', { cid: 'x', accept: true }], ['/api/approve', { id: 'x' }], ['/api/execute', { id: 'x' }], ['/api/reject', { id: 'x', reason: 'no' }], ['/api/propose', { kind: 'credit-transfer', args: {} }], ['/api/identity/create', { cid: 'x', duffs: 1000000 }], ['/api/fund/claim', { cid: 'x' }]]) {
     await assert.rejects(api('POST', route, body), off, route);
   }
 
@@ -195,4 +196,33 @@ test('members share the group name and see who said they will pay', async () => 
   assert.equal(s.hellos[ps[1].keys.authPub].funding.cid, cid);
   assert.equal(s.hellos[ps[2].keys.authPub].funding, undefined);
   assert.equal(Object.keys(s.hellos).length, 3);
+});
+
+test('only the room creator can name a room, and a renamed member keeps their funding claim', async () => {
+  const { reduce } = await import('../src/state.mjs');
+  const participant = await import('../src/participant.mjs');
+  const { roomNamedBy } = await import('../src/app.mjs');
+  const { sha256hex } = await import('../src/util.mjs');
+  const ps = people(2);
+  const at = '2026-11-23T00:00:00.000Z';
+  const room = `t_${sha256hex(`dti-room|testnet|${ps[0].keys.authPub}|Real name|${at}`).slice(0, 32)}`;
+  const cid = 'cd'.repeat(32);
+  const msgs = [
+    participant.hello(ps[0].keys, room, 'ana', { group: 'Real name', groupAt: at }),
+    participant.hello(ps[1].keys, room, 'ben', { group: 'Fake name', groupAt: '0001-01-01T00:00:00.000Z', funding: cid }),
+  ];
+  const first = reduce(msgs, { room });
+  const claimAt = first.hellos[ps[1].keys.authPub].funding.at;
+  const s = reduce([...msgs, participant.hello(ps[1].keys, room, 'benjamin', { funding: cid })], { room });
+  const named = Object.values(s.hellos).filter((h) => h.group && roomNamedBy(room, h)).map((h) => h.group);
+  assert.deepEqual(named, ['Real name']);
+  assert.equal(s.hellos[ps[1].keys.authPub].name, 'benjamin');
+  assert.equal(s.hellos[ps[1].keys.authPub].funding.at, claimAt);
+});
+
+test('claiming to pay needs finished group keys', async (t) => {
+  const relay = await relayFixture(t);
+  const s = new NetworkSession({ ...phrase, relay, network: 'testnet' });
+  await s.createRoom({ label: 'claims', name: 'p1' });
+  await assert.rejects(s.claimFunding('ab'.repeat(32)), /ceremony|not ready|unknown|no such/i);
 });

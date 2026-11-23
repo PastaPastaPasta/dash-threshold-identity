@@ -66,10 +66,11 @@ export function parseRoute(url) {
   return ROOM_PATTERN.test(room) ? room : null;
 }
 
-export function admit(policy, envelope) {
+export function admit(policy, envelope, { returning = false } = {}) {
   const p = policy ?? { owner: null, pinned: [], hellos: 0 };
   if (envelope.type === 'hello') {
     if (!p.owner) return { ok: true, next: { owner: envelope.from, pinned: [envelope.from], hellos: 1 } };
+    if (returning) return { ok: true, next: p };
     if (p.hellos >= MAX_HELLOS) return { ok: false, reason: 'this room has had too many joins' };
     return { ok: true, next: { ...p, hellos: p.hellos + 1 } };
   }
@@ -118,12 +119,13 @@ export async function handleRoom(request, room, store, limiter = null) {
       if ((await store.count(room)) >= MAX_MESSAGES_PER_ROOM) return json(429, { error: 'room is full' });
       if ((await store.countFrom(room, envelope.from)) >= MAX_MESSAGES_PER_SENDER) return json(429, { error: 'too many messages from this key' });
       const client = request.headers.get(CLIENT_HEADER);
-      const slot = client && envelope.type === 'hello' ? sha256hex(`dti-relay|${room}|${client}`).slice(0, 32) : null;
+      const returning = envelope.type === 'hello' && (await store.countFrom(room, envelope.from)) > 0;
+      const slot = client && envelope.type === 'hello' && !returning ? sha256hex(`dti-relay|${room}|${client}`).slice(0, 32) : null;
       if (slot) {
         if (!(await store.count(room)) && limiter && !(await limiter.allow('rooms', client))) return slowDown('new rooms');
         if ((await store.hellosFrom(room, slot)) >= MAX_HELLOS_PER_CLIENT) return json(403, { error: `this network has already joined ${MAX_HELLOS_PER_CLIENT} members to this room; join from another network or start a new room` });
       }
-      const verdict = admit(await store.policy(room), envelope);
+      const verdict = admit(await store.policy(room), envelope, { returning });
       if (!verdict.ok) return json(403, { error: verdict.reason });
       const seq = await store.append(room, id, JSON.stringify(envelope), envelope.from);
       if (slot) await store.addHello(room, slot);

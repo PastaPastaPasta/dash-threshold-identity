@@ -142,6 +142,17 @@ test('one network can take only a few join slots in a room, and open only a few 
   assert.equal((await post(store, limiter, '203.0.113.9', other, hello(keys[0], other, 'z'))).status, 200);
 });
 
+test('a member who already joined can post another hello without using a join slot', async () => {
+  const store = memoryStore();
+  const limiter = windowLimiter({ reads: { limit: 999, periodMs: 60000 }, posts: { limit: 999, periodMs: 60000 }, rooms: { limit: 9, periodMs: 60000 } });
+  const room = 'limit-room-rehello';
+  const keys = Array.from({ length: MAX_HELLOS_PER_CLIENT }, (_, i) => participantKeys(new Uint8Array(32).fill(i + 40)));
+  for (const k of keys) assert.equal((await post(store, limiter, '203.0.113.20', room, hello(k, room, 'x'))).status, 200);
+  assert.equal((await post(store, limiter, '203.0.113.20', room, hello(keys[1], room, 'x', { funding: 'ab'.repeat(32) }))).status, 200);
+  const extra = participantKeys(new Uint8Array(32).fill(99));
+  assert.equal((await post(store, limiter, '203.0.113.20', room, hello(extra, room, 'y'))).status, 403);
+});
+
 test('a slow new-room check cannot let two first joins both own a room', async () => {
   const store = memoryStore();
   let release;

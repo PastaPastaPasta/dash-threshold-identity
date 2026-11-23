@@ -121,8 +121,8 @@ const identityProposal = () => proposals().filter((p) => p.type === 'identity-cr
 const canSign = (p) => p.status === 'collecting' && !p.approvedByMe && p.requirements.some((r) => ceremonyOf(r.key)?.myIndex);
 const groupName = () => {
   const room = (state?.rooms ?? []).find((r) => r.room === state.room);
-  if (room?.label) return room.label;
   if (state?.group) return state.group;
+  if (room?.label) return room.label;
   const c = ceremony();
   if (c) return c.label.replace(/\s+keys\b.*$/i, '') || c.label;
   const creator = members()[0];
@@ -176,8 +176,8 @@ function waitingOn(c) {
   return null;
 }
 
-const reminder = (wait) => {
-  const others = wait?.missing.filter((p) => p.index !== ceremony()?.myIndex && !p.me) ?? [];
+const reminder = (wait, c = ceremony()) => {
+  const others = wait?.missing.filter((p) => p.index !== c?.myIndex && !p.me) ?? [];
   if (!others.length) return '';
   const text = `${groupName()} is waiting for you to ${wait.what}. Open the group: ${inviteText()}`;
   return `<p><button class="dh-btn dh-btn--sm" data-action="remind" data-text="${esc(text)}">Copy a reminder for ${esc(others.map((p) => p.name).join(', '))}</button></p><p class="note">If someone never comes back, start a new group without them.</p>`;
@@ -260,7 +260,7 @@ function header() {
       <details class="more" id="more-menu">
         <summary class="dh-btn dh-btn--quiet" aria-label="More actions">More <span aria-hidden="true">▾</span></summary>
         <div class="more__menu" role="menu">
-          ${c?.status === 'complete' ? '<button role="menuitem" data-action="copy-invite">Copy invite link</button>' : ''}
+          ${c ? `<button role="menuitem" data-action="${loopback() ? 'copy-room' : 'copy-invite'}">${loopback() ? 'Copy group id' : 'Copy invite link'}</button>` : ''}
           ${!ceremony() && members().length > 1 && !readOnly() ? '<button role="menuitem" data-action="skip-check">Continue without checking fingerprints</button>' : ''}
           <button role="menuitem" data-action="sync">Check for updates now</button>
           <button role="menuitem" data-action="export">Export group bundle</button>
@@ -331,7 +331,7 @@ function ceremonyPanel(c, title) {
     <h2 class="step__title">${esc(title)}</h2>
     <p class="step__lede">${esc(c.label)}. ${c.threshold} of ${c.participants.length} would sign with these keys, for example after a key rotation.</p>
     ${seats(c.participants.map((p) => ({ ...p, me: p.index === c.myIndex })), { filled: (p) => p.accepted, label: (p) => (p.completed ? 'done' : p.accepted ? 'accepted' : 'not yet') })}
-    ${me && !me.accepted ? (readOnly() ? readOnlyNote() : acceptPanel(c)) : `<div class="waiting" role="status"><span class="dh-spin" aria-hidden="true"></span><p>${wait ? `Waiting for ${esc(names(wait.missing))} to ${esc(wait.what)}.` : 'Finishing.'}</p></div>${reminder(wait)}`}
+    ${me && !me.accepted ? (readOnly() ? readOnlyNote() : acceptPanel(c)) : `<div class="waiting" role="status"><span class="dh-spin" aria-hidden="true"></span><p>${wait ? `Waiting for ${esc(names(wait.missing))} to ${esc(wait.what)}.` : 'Finishing.'}</p></div>${reminder(wait, c)}`}
   </section>`;
 }
 
@@ -372,7 +372,7 @@ function keysViewFor(c) {
     ${done ? `<div class="dh-actions"><button class="dh-btn dh-btn--primary" data-action="view" data-view="identity">Continue to the identity</button></div>
       <details class="dh-disclosure" id="d-pubkeys"><summary><span>Group public keys</span></summary>${keyTable(Object.entries(c.keys ?? {}).map(([slot, k]) => ({ slot, ...k })))}</details>`
       : me && !me.accepted ? (readOnly() ? readOnlyNote() : acceptPanel(c))
-      : `<div class="waiting" role="status"><span class="dh-spin" aria-hidden="true"></span><p>${wait ? `Waiting for ${esc(names(wait.missing))} to ${esc(wait.what)}.` : 'Finishing.'} ${me ? 'Your part runs by itself while this page is open.' : ''}</p></div>${reminder(wait)}`}
+      : `<div class="waiting" role="status"><span class="dh-spin" aria-hidden="true"></span><p>${wait ? `Waiting for ${esc(names(wait.missing))} to ${esc(wait.what)}.` : 'Finishing.'} ${me ? 'Your part runs by itself while this page is open.' : ''}</p></div>${reminder(wait, c)}`}
     ${c.warnings?.length ? `<details class="dh-disclosure" id="d-warnings"><summary><span>${c.warnings.length} warnings</span></summary><pre>${esc(JSON.stringify(c.warnings, null, 1))}</pre></details>` : ''}
     <details class="dh-disclosure" id="cid-${esc(c.cid.slice(0, 16))}"><summary><span>Ceremony details</span></summary><p class="note">Ceremony <code>${esc(c.cid)}</code></p></details>
   </section>`;
@@ -380,6 +380,8 @@ function keysViewFor(c) {
 
 function acceptPanel(c) {
   const others = c.participants.filter((p) => p.index !== c.myIndex);
+  const flagged = others.filter((p) => mismatched.has(members().find((x) => x.fingerprint === p.fingerprint)?.authPub));
+  if (flagged.length) return `<div class="dh-notice dh-notice--error"><p><strong>You reported that ${esc(flagged.map((p) => p.name).join(', '))}'s fingerprint doesn't match.</strong> Don't accept this ceremony. Recheck over a channel you trust; if it still differs, start a new group without them. If it was a mistake, confirm the match on Members.</p></div>`;
   return `<form class="panel" id="form-accept" data-form="accept" data-cid="${esc(c.cid)}">
     <h3 class="panel__title">Confirm the members, then accept</h3>
     <p>Check each fingerprint against what its owner reads to you. Accept only if all of them match.</p>
@@ -517,7 +519,7 @@ function factsOf(intent, { full = false } = {}) {
   switch (intent.type) {
     case 'credit-transfer':
       rows.push(['Amount', creditsLine(intent.amount)], ['From', idLabel(intent.identityId)], ['To', idLabel(intent.recipientId)]);
-      if (full) rows.push(['Fee', `Platform also takes a small processing fee, well under 0.001 ${esc(platform.unit ?? 'DASH')}, from the identity's balance. The exact fee is set when it is sent.`]);
+      if (full) rows.push(['Fee', `Platform also takes a small processing fee, well under 0.001 ${esc(platform.unit ?? unit(identity()?.network))}, from the identity's balance. The exact fee is set when it is sent.`]);
       break;
     case 'credit-withdrawal':
       rows.push(['Amount', creditsLine(intent.amount)], ['From', idLabel(intent.identityId)], ['To Core address', `<code class="wrap">${esc(intent.outputAddress)}</code>`], ['Core fee', `${esc(intent.coreFeePerByte)} duff per byte`]);
@@ -588,6 +590,7 @@ function proposalsView() {
     ${readOnly() ? readOnlyNote() : ''}
     <p class="step__lede">Everything the identity does starts as a proposal. Before you sign, your page rebuilds the transaction from the proposal and checks that it is exactly what the proposal shows. Whether the payment itself is right is for the group to agree.</p>
     ${view === 'new' ? newProposal(id) : ''}
+    ${view === 'new' && list.some(canSign) ? `<p class="note"><strong>${list.filter(canSign).length} waiting for your signature.</strong> <button class="dh-btn dh-btn--link" data-action="cancel-new">Show them</button></p>` : ''}
     ${view === 'new' ? '' : groups.length ? groups.map(([title, items]) => `<h3 class="group-title">${esc(title)} <span class="count">${items.length}</span></h3>${items.map((p) => (title === 'History' ? doneRow(p) : proposalCard(p))).join('')}`).join('')
       : '<div class="empty"><p class="empty__title">No proposals yet</p><p>Propose sending credits, writing a document or anything else the identity should do. The others see it here and sign.</p></div>'}
   </section>`;
@@ -685,9 +688,9 @@ dialog.addEventListener('click', (e) => {
   if (e.target === dialog || e.target.closest('[data-action=close]')) dialog.close();
 });
 
-function share(amount) {
+function share(amount, intentId) {
   const a = big(amount);
-  const b = idInfo && identity()?.identityId === idInfo.identityId ? big(idInfo.balance) : null;
+  const b = idInfo && identity()?.identityId === idInfo.identityId && (!intentId || intentId === idInfo.identityId) ? big(idInfo.balance) : null;
   if (a === null || !b) return '';
   const pct = Number((a * 10000n) / b) / 100;
   return `, ${pct < 0.01 ? 'under 0.01' : pct.toLocaleString('en-US', { maximumFractionDigits: 2 })}% of its balance,`;
@@ -706,8 +709,10 @@ function reviewDialog(r, offerSign) {
     <header class="dlg__head"><h2 class="dlg__title">${esc(title)}</h2><span class="dh-badge dlg__net">${esc(platform.label ?? '')}</span>${r.status === 'executed' ? '<span class="dh-badge dh-badge--good">already done</span>' : r.ok ? '<span class="dh-badge dh-badge--info">matches the proposal</span>' : '<span class="dh-badge dh-badge--bad">do not sign</span>'}</header>
     <p class="dlg__lede">Proposed by ${esc(r.proposer)}${r.proposal?.note ? `, with the note "${esc(r.proposal.note)}"` : ''}.</p>
     ${r.ok ? '<p class="checked-line"><span class="dh-badge dh-badge--info">checked</span> Your page rebuilt this transaction and it matches the proposal; details below.</p>' : ''}
+    ${r.attention?.length ? `<div class="dh-notice dh-notice--warn"><p><strong>This puts keys under a group's control.</strong> Check who holds them:</p><pre>${esc(r.attention.join('\n'))}</pre></div>` : ''}
+    ${r.warnings.length ? `<div class="dh-notice dh-notice--info"><ul>${r.warnings.map((p) => `<li>${esc(p)}</li>`).join('')}</ul></div>` : ''}
     ${offerSign && r.ok && r.intent?.recipientId ? sentBefore(r) : ''}
-    ${offerSign && r.ok && typeof r.intent?.amount === 'string' ? `<div class="confirm"><p>Before you sign, check with another member, not only ${esc(r.proposer)}, that the group agreed to send <strong>${esc(dashOfCredits(r.intent.amount))} ${esc(platform.unit ?? unit(identity()?.network))}</strong>${share(r.intent.amount)} to:</p><p class="recipient"><code>${esc(chunked(r.intent.recipientId ?? r.intent.outputAddress))}</code></p></div>` : ''}
+    ${offerSign && r.ok && typeof r.intent?.amount === 'string' ? `<div class="confirm"><p>Before you sign, check with another member, not only ${esc(r.proposer)}, that the group agreed to send <strong>${esc(dashOfCredits(r.intent.amount))} ${esc(platform.unit ?? unit(identity()?.network))}</strong>${share(r.intent.amount, r.intent.identityId)} to:</p><p class="recipient"><code>${esc(chunked(r.intent.recipientId ?? r.intent.outputAddress))}</code></p></div>` : ''}
     ${facts(r.intent, { full: true }) || `<ul class="proposal__summary">${r.summary.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>`}
     ${r.ok ? `<div class="checks"><p><strong>What your page checked</strong></p><ul>
       <li>It rebuilt the transaction from the proposal above, and the bytes to sign are exactly those.</li>
@@ -715,8 +720,6 @@ function reviewDialog(r, offerSign) {
       <li>On Platform, that key is enabled on the identity and the nonce is current.</li>
     </ul></div>` : ''}
     ${r.problems.length ? `<div class="dh-notice dh-notice--error"><p><strong>Why not to sign</strong></p><ul>${r.problems.map((p) => `<li>${esc(p)}</li>`).join('')}</ul></div>` : ''}
-    ${r.attention?.length ? `<div class="dh-notice dh-notice--warn"><p><strong>This puts keys under a group's control.</strong> Check who holds them:</p><pre>${esc(r.attention.join('\n'))}</pre></div>` : ''}
-    ${r.warnings.length ? `<div class="dh-notice dh-notice--info"><ul>${r.warnings.map((p) => `<li>${esc(p)}</li>`).join('')}</ul></div>` : ''}
     <details class="dh-disclosure"><summary><span>The exact transaction your share signs (${esc(r.decoded?.action ?? 'decoded')})</span></summary><pre>${esc(JSON.stringify(r.decoded?.json, null, 2))}</pre></details>
     <details class="dh-disclosure"><summary><span>The proposal as written</span></summary><pre>${esc(JSON.stringify(r.intent, null, 2))}</pre></details>
     ${offerSign && r.ok ? `<form class="reject" id="form-reject" data-form="reject" data-id="${esc(r.id)}" hidden><div class="dh-field"><label class="dh-field__label" for="reject-reason">Why are you rejecting it?</label><input class="dh-input" id="reject-reason" name="reason" required></div><div class="dh-actions"><button class="dh-btn dh-btn--destructive">Reject proposal</button></div></form>` : ''}
@@ -832,7 +835,7 @@ document.addEventListener('submit', (e) => {
 document.addEventListener('change', (e) => {
   if (e.target.id === 'import' || e.target.id === 'import-start') importFile(e.target.files[0]);
   if (e.target.name === 'fp') {
-    if (e.target.checked) verified.add(e.target.value);
+    if (e.target.checked) { verified.add(e.target.value); mismatched.delete(e.target.value); }
     else verified.delete(e.target.value);
   }
   if (e.target.dataset?.action === 'verify') {

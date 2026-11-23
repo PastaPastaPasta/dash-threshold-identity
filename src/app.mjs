@@ -9,7 +9,7 @@ import { connect, retry, errorText, sdkModule, protocolVersionOf } from './platf
 import { makeProposalBody, reviewProposal, signedTransition } from './proposals.mjs';
 import { describeIntent } from './platform/transitions.mjs';
 import * as core from './platform/core.mjs';
-import { network as networkOf } from './networks.mjs';
+import { network as networkOf, roomNetwork, roomPrefix } from './networks.mjs';
 import { sha256hex, hex, assert, toPlain, getOwn, sleep, base64ToHex, canonical } from './util.mjs';
 
 const SNAPSHOT = /ExecutionNotProved|affected.?state/i;
@@ -69,6 +69,14 @@ async function confirmOnChain(sdk, intent, derived, attempts = 10) {
   return false;
 }
 
+// A room id commits to its creator, name and creation time, so only the creator's own hello can name it.
+export function roomNamedBy(room, h) {
+  const bare = sha256hex(`dti-room|${h.authPub}|${h.group}|${h.groupAt}`).slice(0, 32);
+  if (room === bare) return true;
+  const net = roomNetwork(room);
+  return Boolean(net) && room === `${roomPrefix(net)}_${sha256hex(`dti-room|${net}|${h.authPub}|${h.group}|${h.groupAt}`).slice(0, 32)}`;
+}
+
 export class Session {
   constructor({ mnemonic, passphrase = '', room, relay, log = () => {} }) {
     this.seed = seedFromMnemonic(mnemonic, passphrase);
@@ -113,16 +121,17 @@ export class Session {
   }
 
   createRoom({ label, relay, name }) {
-    const room = sha256hex(`dti-room|${this.keys.authPub}|${label}|${new Date().toISOString()}`).slice(0, 32);
+    const at = new Date().toISOString();
+    const room = sha256hex(`dti-room|${this.keys.authPub}|${label}|${at}`).slice(0, 32);
     this.data = openRoom(room, { relay, label });
-    return this.joinRoom({ room, relay, name, group: label });
+    return this.joinRoom({ room, relay, name, group: label, groupAt: at });
   }
 
-  async joinRoom({ room, relay, name, label, group }) {
+  async joinRoom({ room, relay, name, label, group, groupAt }) {
     this.useRoom(room, relay, label);
     await this.sync();
     const mine = this.state().hellos[this.keys.authPub];
-    if (!mine || mine.name !== name) await this.post([participant.hello(this.keys, room, name, { group: group ?? mine?.group, funding: mine?.funding?.cid })]);
+    if (!mine || mine.name !== name) await this.post([participant.hello(this.keys, room, name, { group: group ?? mine?.group, groupAt: groupAt ?? mine?.groupAt, funding: mine?.funding?.cid })]);
     return { room, relay: this.data.relay, ...this.whoami() };
   }
 
@@ -130,14 +139,16 @@ export class Session {
     const s = this.state();
     const mine = s.hellos[this.keys.authPub];
     assert(mine, 'join the group first');
-    assert(this.ceremony(cid).status === 'complete', 'the group keys are not ready yet');
-    await this.post([participant.hello(this.keys, this.data.room, mine.name, { group: mine.group, funding: cid })]);
-    return { cid };
+    const c = this.ceremony(cid);
+    assert(c.status === 'complete', 'the group keys are not ready yet');
+    assert(participantIndex(c.config, this.keys.authPub), 'only members of this key ceremony can pay for its identity');
+    await this.post([participant.hello(this.keys, this.data.room, mine.name, { group: mine.group, groupAt: mine.groupAt, funding: c.cid })]);
+    return { cid: c.cid };
   }
 
   status() {
     const s = this.state();
-    const shared = Object.values(s.hellos).filter((h) => h.group).sort((a, b) => String(a.at).localeCompare(String(b.at)))[0];
+    const shared = Object.values(s.hellos).find((h) => h.group && h.groupAt && roomNamedBy(this.data.room, h));
     return {
       group: shared?.group ?? null,
       room: this.data.room,

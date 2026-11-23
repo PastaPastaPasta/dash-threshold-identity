@@ -65,7 +65,8 @@ export function reduce(messages, { room } = {}) {
             hellos[m.from] = {
               authPub: m.from, name: b.name.slice(0, 64), transportPub: b.transportPub, fingerprint: fingerprint(m.from, b.transportPub), at: prev?.at ?? m.at,
               group: typeof b.group === 'string' ? b.group.slice(0, 80) : prev?.group,
-              funding: typeof b.funding === 'string' && /^[0-9a-f]{64}$/.test(b.funding) ? { cid: b.funding, at: m.at } : prev?.funding,
+              groupAt: typeof b.group === 'string' && typeof b.groupAt === 'string' ? b.groupAt.slice(0, 40) : prev?.groupAt,
+              funding: typeof b.funding === 'string' && /^[0-9a-f]{64}$/.test(b.funding) ? (prev?.funding?.cid === b.funding ? prev.funding : { cid: b.funding, at: m.at }) : prev?.funding,
             };
           }
           break;
