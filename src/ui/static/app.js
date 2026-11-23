@@ -413,7 +413,7 @@ function identityView() {
       </dl>
       ${(() => { const n = proposals().filter(canSign).length; return n ? `<div class="dh-notice dh-notice--warn pending"><p><strong>${n === 1 ? '1 proposal needs' : `${n} proposals need`} your signature.</strong></p><button class="dh-btn dh-btn--primary" data-action="view" data-view="proposals">Review ${n === 1 ? 'it' : 'them'}</button></div>` : ''; })()}
       <details class="dh-disclosure" id="id-keys"><summary><span>The identity's keys</span></summary>${keyTable(Object.values(id.keys))}</details>
-      <div class="dh-actions">${proposals().some(canSign) ? '' : '<button class="dh-btn dh-btn--primary" data-action="view" data-view="proposals">Go to proposals</button>'}<button class="dh-btn dh-btn--quiet" data-action="read-identity" data-id="${esc(id.identityId)}">Check on Platform</button></div>
+      <div class="dh-actions">${proposals().some(canSign) ? '' : '<button class="dh-btn dh-btn--primary" data-action="view" data-view="proposals">Go to proposals</button>'}<button class="dh-btn" data-action="read-identity" data-id="${esc(id.identityId)}">Check on Platform</button></div>
     </section>`;
   }
   if (!c || c.status !== 'complete') {
@@ -438,7 +438,7 @@ function identityView() {
       ${f ? `<p class="address"><code class="wrap">${esc(f.address)}</code> <button class="dh-btn dh-btn--sm" data-action="copy" data-text="${esc(f.address)}">Copy</button></p>
         <p>Balance: <strong>${esc(dashOfDuffs(f.duffs))} ${unit(net)}</strong> <button class="dh-btn dh-btn--sm dh-btn--quiet" data-action="funding">Refresh</button></p>`
         : `<div class="dh-loading" role="status"><span class="dh-spin" aria-hidden="true"></span>Reading your address and balance…</div>`}
-      ${net === 'testnet' ? `<p><a class="${f && f.duffs === 0 ? 'dh-btn dh-btn--primary' : 'dh-link'}" href="https://faucet.dashhq.org/?network=testnet" target="_blank" rel="noopener noreferrer">Get testnet DASH from the faucet ↗</a> Paste your address there, then refresh.</p>` : ''}
+      ${net === 'testnet' ? `<p><a class="dh-link" href="https://faucet.dashhq.org/?network=testnet" target="_blank" rel="noopener noreferrer">Get testnet DASH from the faucet ↗</a> Paste your address there, then refresh.</p>` : ''}
     </div>
     ${readOnly() ? readOnlyNote() : fundForm(net, f, enough)}`;
   const who = readOnly() ? '' : payer && !payer.me
@@ -457,9 +457,10 @@ function fundForm(net, f, enough, fresh = false) {
   return `<form class="panel" id="form-identity-create" data-form="identity">
       <div class="dh-field"><label class="dh-field__label" for="fund-amount">Amount to lock</label>
         <div class="dh-input-group"><input class="dh-input" id="fund-amount" name="amount" inputmode="decimal" value="0.5" required><span class="dh-input-group__addon">${unit(net)}</span></div>
-        <p class="dh-field__help">Creating the identity costs about 0.001 ${unit(net)}; the rest stays as its balance. A small network fee is added. If an earlier lock of yours was never used, for example because the page closed while it waited, that lock is used instead, at its own amount.</p></div>
-      <label class="dh-check"><input type="checkbox" name="newLock"${fresh ? ' checked' : ''}> Lock new funds even if an earlier unused lock is found</label>
-      <div class="dh-actions"><button class="dh-btn dh-btn--primary"${f && !enough ? ' aria-describedby="fund-why"' : ''}>Lock and propose the identity</button>${f && !enough ? `<span class="dh-actions__note" id="fund-why">Waiting for ${unit(net)} at your address, unless an earlier lock of yours is found.</span>` : ''}</div>
+        <p class="dh-field__help">Creating the identity costs about 0.001 ${unit(net)}; the rest stays as its balance. A small network fee is added.</p></div>
+      <details class="dh-disclosure" id="fund-advanced"${fresh ? ' open' : ''}><summary><span>Earlier locks</span></summary><p>If an earlier lock of yours was never used, for example because the page closed while it waited, that lock is used instead, at its own amount.</p>
+      <label class="dh-check"><input type="checkbox" name="newLock"${fresh ? ' checked' : ''}> Lock new funds even if an earlier unused lock is found</label></details>
+      <div class="dh-actions"><button class="dh-btn${f && !enough ? '' : ' dh-btn--primary'}"${f && !enough ? ' aria-describedby="fund-why"' : ''}>Lock and propose the identity</button>${f && !enough ? `<span class="dh-actions__note" id="fund-why">Your address holds ${esc(dashOfDuffs(f.duffs))} ${unit(net)}. Add ${unit(net)} first, unless an earlier unused lock of yours exists.</span>` : ''}</div>
       <p class="note">This takes one to three minutes while the network confirms the lock. Keep this page open.</p>
     </form>`;
 }
@@ -558,7 +559,7 @@ const replaced = (p) => p.status === 'ready' && refused(p) && p.intent && propos
 
 function doneRow(p) {
   const f = typeof p.intent?.amount === 'string' ? ` ${dashOfCredits(p.intent.amount)} ${platform.unit ?? unit(identity()?.network)}` : '';
-  return `<details class="done-row" id="done-${esc(p.id.slice(0, 16))}"><summary><span class="done-row__title">${esc(titleOf(p.type))}${esc(f)}</span><span class="muted">${esc(ago(p.at))}, proposed by ${esc(p.proposer)}</span>${replaced(p) ? '<span class="dh-badge dh-badge--outline">replaced</span>' : '<span class="dh-badge dh-badge--good">done</span>'}</summary>${proposalCard(p)}</details>`;
+  return `<details class="done-row" id="done-${esc(p.id.slice(0, 16))}"><summary><span class="done-row__title">${esc(titleOf(p.type))}${esc(f)}</span><span class="muted">${esc(ago(p.at))}, proposed by ${esc(p.proposer)}</span>${replaced(p) ? '<span class="dh-badge dh-badge--outline">failed, then replaced</span>' : '<span class="dh-badge dh-badge--good">done</span>'}<span class="done-row__to muted">${p.intent?.recipientId ? `to ${esc(short(p.intent.recipientId, 10))}` : p.intent?.outputAddress ? `to ${esc(short(p.intent.outputAddress, 10))}` : ''}</span></summary>${proposalCard(p)}</details>`;
 }
 
 function statusBadge(p) {
@@ -692,15 +693,22 @@ function share(amount) {
   return `, ${pct < 0.01 ? 'under 0.01' : pct.toLocaleString('en-US', { maximumFractionDigits: 2 })}% of its balance,`;
 }
 
+function sentBefore(r) {
+  const earlier = proposals().filter((p) => p.id !== r.id && p.status === 'executed' && p.intent?.recipientId === r.intent.recipientId);
+  if (!earlier.length) return '<p class="dh-notice dh-notice--warn"><strong>First payment to this identity.</strong> The group has never sent to it before, so check the id carefully.</p>';
+  const last = earlier.at(-1);
+  return `<p class="note">The group has sent to this identity ${earlier.length === 1 ? 'once' : `${earlier.length} times`} before, most recently ${esc(ago(last.at))} (proposed by ${esc(last.proposer)}).</p>`;
+}
+
 function reviewDialog(r, offerSign) {
   const title = titleOf(r.intent?.type);
   showDialog(`
     <header class="dlg__head"><h2 class="dlg__title">${esc(title)}</h2><span class="dh-badge dlg__net">${esc(platform.label ?? '')}</span>${r.status === 'executed' ? '<span class="dh-badge dh-badge--good">already done</span>' : r.ok ? '<span class="dh-badge dh-badge--info">matches the proposal</span>' : '<span class="dh-badge dh-badge--bad">do not sign</span>'}</header>
     <p class="dlg__lede">Proposed by ${esc(r.proposer)}${r.proposal?.note ? `, with the note "${esc(r.proposal.note)}"` : ''}.</p>
     ${r.ok ? '<p class="checked-line"><span class="dh-badge dh-badge--info">checked</span> Your page rebuilt this transaction and it matches the proposal; details below.</p>' : ''}
-    ${offerSign && r.ok && r.intent?.recipientId && !proposals().some((p) => p.id !== r.id && p.status === 'executed' && p.intent?.recipientId === r.intent.recipientId) ? '<p class="dh-notice dh-notice--warn"><strong>First payment to this identity.</strong> The group has never sent to it before, so check the id carefully.</p>' : ''}
-    ${facts(r.intent, { full: true }) || `<ul class="proposal__summary">${r.summary.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>`}
+    ${offerSign && r.ok && r.intent?.recipientId ? sentBefore(r) : ''}
     ${offerSign && r.ok && typeof r.intent?.amount === 'string' ? `<div class="confirm"><p>Before you sign, check with another member, not only ${esc(r.proposer)}, that the group agreed to send <strong>${esc(dashOfCredits(r.intent.amount))} ${esc(platform.unit ?? unit(identity()?.network))}</strong>${share(r.intent.amount)} to:</p><p class="recipient"><code>${esc(chunked(r.intent.recipientId ?? r.intent.outputAddress))}</code></p></div>` : ''}
+    ${facts(r.intent, { full: true }) || `<ul class="proposal__summary">${r.summary.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>`}
     ${r.ok ? `<div class="checks"><p><strong>What your page checked</strong></p><ul>
       <li>It rebuilt the transaction from the proposal above, and the bytes to sign are exactly those.</li>
       <li>The signing key is the group's own key, with the level Platform requires for this.</li>
@@ -843,7 +851,7 @@ document.addEventListener('click', (e) => {
   const menu = $('#more-menu');
   if (menu?.open && b.closest('#more-menu') && a !== undefined) menu.open = false;
   switch (a) {
-    case 'view': view = b.dataset.view; if (view === 'identity' && !funding) loadFunding(); render(); window.scrollTo({ top: 0 }); break;
+    case 'view': toast.hidden = true; view = b.dataset.view; if (view === 'identity' && !funding) loadFunding(); render(); window.scrollTo({ top: 0 }); break;
     case 'copy-invite': copy(inviteText(), 'Invite link'); break;
     case 'copy-room': copy(state.room, 'Group id'); break;
     case 'mismatch': mismatched.add(b.dataset.key); verified.delete(b.dataset.key); render(); break;

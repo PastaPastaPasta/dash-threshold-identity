@@ -215,3 +215,8 @@ body.is-busy .dh-btn--primary { opacity: .7; pointer-events: none; }
 }
 .checked-line { display: flex; gap: 8px; align-items: center; margin: 0 0 12px; color: var(--dh-ink-2); font-size: var(--dh-fs-sm); }
 @media (min-width: 861px) { .toast { top: 76px; bottom: auto; } }
+@media (max-width: 600px) { #dialog .dlg__foot { position: static; } }
+@media (min-width: 861px) { .toast { max-width: min(520px, calc(100vw - 48px)); } }
+.done-row summary { cursor: pointer; }
+.done-row summary::after { content: "›"; margin-left: auto; color: var(--dh-ink-2); }
+.done-row__to { font-size: var(--dh-fs-sm); }
