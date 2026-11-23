@@ -1,0 +1,32 @@
+[4s] shot landing
+[5s] mia unlocked
+[6s] room t_366260d294c1aceaf1f2d41302b97c05 invite https://new-multisig.dashhq.org/?network=testnet#room=t_366260d294c1aceaf1f2d41302b97c05&name=E2E%20testnet%20group
+[6s] shot alone
+[8s] kim unlocked
+[9s] kim joined
+[10s] lee unlocked
+[11s] lee joined
+[17s] shot members
+[18s] mia accepted
+[20s] kim accepted
+[23s] lee accepted
+[33s] ceremony complete 0b517453a741…
+[33s] shot keys-ready
+[34s] shot keys-ready-phone
+[34s] shot fund
+[35s] mia console.error Failed to load resource: the server responded with a status of 404 (Not Found)
+[88s] mia asset lock and identity proposal: Identity proposed. The others can sign it now.
+[92s] kim signed the identity
+[94s] shot review-identity-phone
+[94s] lee signed the identity
+[99s] identity Dj5KkwEfAWFURv3rMmVGN4cxQu8q7NXqiojWAicAsyp9
+[99s] shot identity
+[110s] kim proposed a credit-transfer
+[115s] shot review-transfer-phone
+[115s] lee signed the transfer
+[117s] shot review-transfer
+[117s] mia signed the transfer
+[124s] lee broadcast the transfer: Done on Platform
+[124s] shot proposals-done
+[125s] shot proposals-done-phone
+[125s] DONE {"network":"testnet","room":"t_366260d294c1aceaf1f2d41302b97c05","cid":"0b517453a741…","identityId":"Dj5KkwEfAWFURv3rMmVGN4cxQu8q7NXqiojWAicAsyp9"}

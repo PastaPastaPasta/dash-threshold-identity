@@ -1,0 +1,32 @@
+[4s] shot landing
+[5s] gina unlocked
+[6s] room r_d5cb59a6ad04760ad5752b0eb53ab9b4 invite https://new-multisig.dashhq.org/?network=local#room=r_d5cb59a6ad04760ad5752b0eb53ab9b4&name=E2E%20local%20group
+[6s] shot alone
+[7s] hank unlocked
+[8s] hank joined
+[10s] ivy unlocked
+[11s] ivy joined
+[17s] shot members
+[18s] gina accepted
+[20s] hank accepted
+[22s] ivy accepted
+[35s] ceremony complete f4d6abc9b621…
+[35s] shot keys-ready
+[35s] shot keys-ready-phone
+[36s] shot fund
+[39s] gina console.error Failed to load resource: the server responded with a status of 404 (Not Found)
+[150s] gina asset lock and identity proposal: Identity proposed. The others can sign it now.
+[156s] hank signed the identity
+[158s] shot review-identity-phone
+[158s] ivy signed the identity
+[164s] identity JCUbVYfZYq5qa9Fp2b1ymJwju6DMzV29rdc3CCfvyddG
+[165s] shot identity
+[172s] hank proposed a credit-withdrawal
+[173s] shot review-transfer-phone
+[173s] ivy signed the transfer
+[180s] shot review-transfer
+[181s] gina signed the transfer
+[190s] ivy broadcast the transfer: Done on Platform
+[190s] shot proposals-done
+[190s] shot proposals-done-phone
+[190s] DONE {"network":"local","room":"r_d5cb59a6ad04760ad5752b0eb53ab9b4","cid":"f4d6abc9b621…","identityId":"JCUbVYfZYq5qa9Fp2b1ymJwju6DMzV29rdc3CCfvyddG"}
