@@ -9,6 +9,9 @@ routes = [
   { pattern = "new-multisig.dashhq.org", custom_domain = true },
 ]
 
+[dev]
+upstream_protocol = "https"
+
 [assets]
 directory = "dist"
 binding = "ASSETS"
