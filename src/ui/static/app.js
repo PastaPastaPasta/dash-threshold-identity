@@ -213,7 +213,7 @@ function startView() {
       </form>
       <form class="panel panel--path" id="form-create-room" data-form="create">
         <h2 class="panel__title">Start a new group</h2>
-        <div class="dh-field"><label class="dh-field__label" for="create-label">Group name</label><input class="dh-input" id="create-label" name="label" placeholder="Example foundation" autocomplete="off" required></div>
+        <div class="dh-field"><label class="dh-field__label" for="create-label">Group name</label><input class="dh-input" id="create-label" name="label" maxlength="80" placeholder="Example foundation" autocomplete="off" required></div>
         <div class="dh-field"><label class="dh-field__label" for="create-name">Your name in the group</label><input class="dh-input" id="create-name" name="name" autocomplete="off" required></div>
         ${platform.relayField ? `<div class="dh-field"><label class="dh-field__label" for="create-relay">Relay URL <span class="dh-field__optional">optional; without one, pass bundles around</span></label><input class="dh-input" id="create-relay" name="relay" autocomplete="off"></div>` : ''}
         <button class="dh-btn ${invited ? '' : 'dh-btn--primary'}">Start group</button>
