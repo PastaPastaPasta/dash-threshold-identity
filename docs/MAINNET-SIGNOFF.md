@@ -1,10 +1,10 @@
 # Mainnet sign-off
 
-The hosted app runs on Mainnet, Testnet, devnets and Local networks. On Mainnet it is **read only** until Pasta signs off on this page. The CLI has supported Mainnet since the first release, behind `--confirm-mainnet` for anything that locks DASH.
+The hosted app runs on Mainnet, Testnet, devnets and Local networks. On Mainnet, writes are **on** since 2026-11-23, by Pasta's decision recorded below. The CLI has supported Mainnet since the first release, behind `--confirm-mainnet` for anything that locks DASH.
 
-## What is on now, and what the flag gates
+## What the flag gates
 
-`web/src/flags.mjs` holds `MAINNET_WRITES = false`. A test fails if it changes, and the bundle hash changes with it, so the deployed value can be checked ([VERIFY.md](VERIFY.md)).
+`web/src/flags.mjs` holds `MAINNET_WRITES = true` since 2026-11-23 (see the sign-off record below). A test pins the value, and the bundle hash changes with it, so the deployed value can be checked ([VERIFY.md](VERIFY.md)). The table shows what a build with the flag off allows.
 
 | On Mainnet with the flag off | Allowed |
 |---|---|
@@ -103,6 +103,8 @@ Each item needs an owner and evidence: a PR, a review or a run.
 | Live Mainnet dry run | **Read only.** DAPI connect and balance lookups pass. There is no Mainnet test wallet with DASH, so nothing was spent. |
 
 Turning writes on later is one change, made after Pasta's guardrail steps and after D9 is settled. As built, the flag would also enable asset locks built in the page from a member's phrase, which D9 recommends against; either D9 is accepted as is, or that path is turned off for Mainnet first: `MAINNET_WRITES = true` in `web/src/flags.mjs` and its pinning test, then a deploy. To turn them off again, run `npm run web:mainnet-off` (it sets the flag false, tests, deploys and checks the live site), or roll back the Worker with `npx wrangler rollback <previous version>` from `web/`.
+
+**2026-11-23 11:44 CT.** Pasta, relayed by the dashhq PM: the deploy-trust risk (the account-wide Cloudflare token on the agent box, and the permissive Mainnet CSP) is "not a concern for this"; turn Mainnet on at multisig.dashhq.org and skip the GitHub-environment, scoped-token and signing-key guardrails. `MAINNET_WRITES` was set to `true` in that change. The in-app protections stay: the typed "Mainnet, real DASH" confirmation (D10) and the asset-lock recovery (#6). D9 is accepted as built: Mainnet asset locks are built in the page from the funder's phrase, so a phrase used there must hold only what it is about to lock. To turn writes off again: `npm run web:mainnet-off`, or `npx wrangler rollback <previous version>` from `web/`.
 
 ## What stays true regardless
 

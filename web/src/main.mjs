@@ -14,7 +14,7 @@ const inviteLabel = hash.get('name')?.slice(0, 80) ?? null;
 if (invite) history.replaceState(null, '', `${location.pathname}${location.search}`);
 
 const STRIP = {
-  mainnet: MAINNET_WRITES ? '<strong>Mainnet.</strong> Real DASH. Every signature here moves real money.' : '<strong>Mainnet, read only.</strong> Real DASH. You can open groups and check balances; key ceremonies, signing and funding are off in this build until they have been reviewed.',
+  mainnet: MAINNET_WRITES ? '<strong>Mainnet.</strong> Real DASH. Every signature here moves real money; use a phrase that holds nothing else.' : '<strong>Mainnet, read only.</strong> Real DASH. You can open groups and check balances; key ceremonies, signing and funding are off in this build until they have been reviewed.',
   testnet: '<strong>Testnet.</strong> Practice money. Your seed phrase stays in this tab and is gone when you close it.',
   devnet: '<strong>Devnet.</strong> A developer network with practice money. Your seed phrase stays in this tab.',
   local: '<strong>Local network.</strong> A Platform network on this computer. Your seed phrase stays in this tab.',

@@ -1,1 +1,1 @@
-export const MAINNET_WRITES = false;
+export const MAINNET_WRITES = true;

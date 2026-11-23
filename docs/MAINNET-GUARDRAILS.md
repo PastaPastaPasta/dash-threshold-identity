@@ -1,6 +1,8 @@
 # Mainnet guardrails: what Pasta sets up
 
-This is the deploy-trust part of [MAINNET-SIGNOFF.md](MAINNET-SIGNOFF.md). It takes one sitting of about 17 minutes, and only covers what needs Pasta's GitHub and Cloudflare accounts. Mainnet writes stay off (`MAINNET_WRITES = false`) until Pasta decides otherwise; nothing here turns them on.
+> **Not in use.** On 2026-11-23 Pasta decided these guardrails are not needed for this tool and turned Mainnet on without them ([MAINNET-SIGNOFF.md](MAINNET-SIGNOFF.md)). The workflow, signing tool and off switch stay in the repository in case that changes; CI does not deploy the page today.
+
+This is the deploy-trust part of [MAINNET-SIGNOFF.md](MAINNET-SIGNOFF.md). It takes one sitting of about 17 minutes, and only covers what needs Pasta's GitHub and Cloudflare accounts.
 
 ## Already done in the repository
 

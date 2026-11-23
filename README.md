@@ -80,9 +80,9 @@ It covers rooms and bundles, fingerprints, ceremonies, funding, proposals with t
 
 ### The hosted app
 
-`web/` builds the same UI into a page that runs entirely in the browser, with the relay on the same origin, deployed at https://multisig.dashhq.org. It works on Testnet, devnets and a Local dashmate network; Mainnet is read only until it has been signed off. The seed phrase stays in the tab's memory. See [docs/HOSTED.md](docs/HOSTED.md) for how it reuses `src/`, the network checks and the risks of serving it from a public domain.
+`web/` builds the same UI into a page that runs entirely in the browser, with the relay on the same origin, deployed at https://multisig.dashhq.org. It works on Testnet, devnets and a Local dashmate network; Mainnet writes are on (signed off 2026-11-23), behind a typed confirmation before every spend or signature. The seed phrase stays in the tab's memory. See [docs/HOSTED.md](docs/HOSTED.md) for how it reuses `src/`, the network checks and the risks of serving it from a public domain.
 
-The build is reproducible. Every served file except `index.html` is listed with its SHA-256 in `build-manifest.txt`; `index.html` carries that manifest's hash (the bundle hash, shown on the page), so the hash of `index.html` covers the whole site. Page hash of this commit: `22f4307a9b57202743553d99dc82243e77cc86f2548129115bfad294f9219f77`. To check that the live site serves exactly this source, see [docs/VERIFY.md](docs/VERIFY.md). What a mainnet build would need is in [docs/MAINNET-SIGNOFF.md](docs/MAINNET-SIGNOFF.md).
+The build is reproducible. Every served file except `index.html` is listed with its SHA-256 in `build-manifest.txt`; `index.html` carries that manifest's hash (the bundle hash, shown on the page), so the hash of `index.html` covers the whole site. Page hash of this commit: `699f354978bad6ffca656c04f23c8d975f6fa7f5754c6a8d2bbc47d067dd7cf2`. To check that the live site serves exactly this source, see [docs/VERIFY.md](docs/VERIFY.md). What a mainnet build would need is in [docs/MAINNET-SIGNOFF.md](docs/MAINNET-SIGNOFF.md).
 
 ## The relay
 
