@@ -89,19 +89,19 @@ Each item needs an owner and evidence: a PR, a review or a run.
 
 | Check | Result |
 |---|---|
-| Stuck asset lock recovery | **Fails; fix in progress.** The browser keeps its asset-lock journal in memory. A tab closed between the broadcast and the identity proposal, which includes the chain-lock wait of up to 20 minutes, loses track of the lock. On reload the page builds and broadcasts a second lock, and no tool finds the first one again. The fix rebuilds the list of locks from the funding address's history on chain and resumes an unused lock. |
+| Stuck asset lock recovery | **Fixed** in PR #6 (merged `09c0795`). With no journal record, the page reads the funding address's history and resumes an unused lock instead of building another. It never reuses a credit key, and re-sends a lock that dropped out of the mempool. Regtest crash runs (locks `eb2a60fc…`, `902e0688…`) resumed the same lock and broadcast no second one. Remaining gap: a top-up lock lost to a closed tab can only be recovered with the CLI. |
 | D9: funding key in the page | **Open (Pasta).** The member's phrase derives a Core key that moves DASH with no threshold. Together with deploy trust, this is a theft path for every balance typed into the page. |
-| Deploy trust and `web-mainnet` environment | **Open (Pasta).** Deploys run from the agent box with an account-wide token. Needed: a `web-mainnet` environment with a required reviewer, a branch rule and a Worker-only token. The agent's GitHub login has no admin scope. |
+| Deploy trust and `web-mainnet` environment | **Open (Pasta).** The repository side is ready: a signed-release deploy workflow, release signing and CODEOWNERS ([MAINNET-GUARDRAILS.md](MAINNET-GUARDRAILS.md)). Pasta's account steps take about 15 minutes. |
 | D6: Mainnet CSP | **Open.** `connect-src` allows `https://*:443`, because there is no named DAPI gateway on Mainnet. |
-| D10: typed confirmation | **Done** in this change. Every Mainnet lock, signature and broadcast asks the member to type the amount, or `mainnet` when there is no amount. `NetworkSession` refuses Mainnet approve and execute calls without `confirmMainnet`. |
-| Change and fee handling | Checked. Change returns to the funding address, and an asset lock whose fee is above `MAX_FEE` is refused. |
+| D10: typed confirmation | **Done** in this change. Every Mainnet lock, signature and broadcast asks the member to type the amount, or `mainnet` when there is no amount, under a "Mainnet, real DASH" warning. `NetworkSession` refuses Mainnet approve and execute calls without `confirmMainnet`. |
+| Change and fee handling | Checked, and two bugs fixed in PR #6. Change returns to the funding address and the fee is capped at 0.001 DASH. Locks with 7 or more inputs had paid below the relay minimum, and a 100,000-duff registration lock would have been stranded; the minimum is now 200,000. |
 | Platform version | Mainnet at protocol 14 (DAPI read on 2026-11-22). |
 | Signed release (D5), second-machine build | **Open (Pasta).** Needs a release key that Pasta holds. |
 | Zone injection rules for the host | **Open (Pasta).** The token cannot write zone rules (see [HOSTED.md](HOSTED.md)). Until then, the Worker blocks the injection with `no-transform` and the CSP. |
 | Independent security review | Partly done: agent reviews only, so not a human review. |
 | Live Mainnet dry run | **Read only.** DAPI connect and balance lookups pass. There is no Mainnet test wallet with DASH, so nothing was spent. |
 
-Turning writes on later is one change: `MAINNET_WRITES = true` in `web/src/flags.mjs` and its pinning test, then a deploy. To turn them off again, revert that commit and deploy, or roll back the Worker with `npx wrangler rollback <previous version>` from `web/`.
+Turning writes on later is one change, made after Pasta's guardrail steps: `MAINNET_WRITES = true` in `web/src/flags.mjs` and its pinning test, then a deploy. To turn them off again, run `npm run web:mainnet-off` (it sets the flag false, tests, deploys and checks the live site), or roll back the Worker with `npx wrangler rollback <previous version>` from `web/`.
 
 ## What stays true regardless
 
