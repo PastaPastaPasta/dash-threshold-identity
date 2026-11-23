@@ -313,7 +313,7 @@ function keysView() {
         </div>
         <div class="dh-field"><label class="dh-field__label" for="ceremony-label">What the keys are for</label><input class="dh-input" id="ceremony-label" name="label" value="${esc(`${groupName()} keys`)}" required></div>
         ${platform.networks.length > 1 ? `<div class="dh-field"><label class="dh-field__label" for="ceremony-network">Network</label><select class="dh-select" id="ceremony-network" name="network">${platform.networks.map((n) => `<option>${esc(n)}</option>`).join('')}</select></div>` : ''}
-        <details class="dh-disclosure"><summary><span>Key layout (advanced)</span></summary><p class="dh-field__help">Leave empty for the standard four keys: master, critical, document and transfer.</p><textarea class="dh-textarea dh-input--mono" id="ceremony-keys" name="keys" rows="6"></textarea></details>
+        <details class="dh-disclosure" id="d-keylayout"><summary><span>Key layout (advanced)</span></summary><p class="dh-field__help">Leave empty for the standard four keys: master, critical, document and transfer.</p><textarea class="dh-textarea dh-input--mono" id="ceremony-keys" name="keys" rows="6"></textarea></details>
         <div class="dh-actions"><button class="dh-btn dh-btn--primary">Propose the key ceremony</button></div>
         <p class="note">Every member then confirms the fingerprints and accepts. The rest runs by itself while their pages are open.</p>
       </form>`}
@@ -328,10 +328,10 @@ function keysView() {
     <p class="step__lede">${esc(c.label)}. ${c.threshold} of ${c.participants.length} members must sign anything the identity does.</p>
     ${seats(c.participants.map((p) => ({ ...p, me: p.index === c.myIndex })), { filled: (p) => (done ? true : p.accepted), label })}
     ${done ? `<div class="dh-actions"><button class="dh-btn dh-btn--primary" data-action="view" data-view="identity">Continue to the identity</button></div>
-      <details class="dh-disclosure"><summary><span>Group public keys</span></summary>${keyTable(Object.entries(c.keys ?? {}).map(([slot, k]) => ({ slot, ...k })))}</details>`
+      <details class="dh-disclosure" id="d-pubkeys"><summary><span>Group public keys</span></summary>${keyTable(Object.entries(c.keys ?? {}).map(([slot, k]) => ({ slot, ...k })))}</details>`
       : me && !me.accepted ? (readOnly() ? readOnlyNote() : acceptPanel(c))
       : `<div class="waiting" role="status"><span class="dh-spin" aria-hidden="true"></span><p>${wait ? `Waiting for ${esc(names(wait.missing))} to ${esc(wait.what)}.` : 'Finishing.'} ${me ? 'Your part runs by itself while this page is open.' : ''}</p></div>`}
-    ${c.warnings?.length ? `<details class="dh-disclosure"><summary><span>${c.warnings.length} warnings</span></summary><pre>${esc(JSON.stringify(c.warnings, null, 1))}</pre></details>` : ''}
+    ${c.warnings?.length ? `<details class="dh-disclosure" id="d-warnings"><summary><span>${c.warnings.length} warnings</span></summary><pre>${esc(JSON.stringify(c.warnings, null, 1))}</pre></details>` : ''}
     <p class="note">Ceremony <code>${esc(short(c.cid, 12))}</code></p>
   </section>`;
 }
@@ -425,7 +425,7 @@ function proposalCard(p, { focus = false } = {}) {
     ${first ? seats(first.people, { threshold: first.r.threshold, done: p.status === 'executed', refused: p.status === 'ready' && refused(p), filled: (x) => first.r.approvals.includes(x.index), label: (x) => (first.r.approvals.includes(x.index) ? 'signed' : '') }) : ''}
     ${reqs.length > 1 && p.status !== 'executed' ? `<p class="note">Needs signatures for ${reqs.length} keys; the count above is for the ${esc(SLOT_NAMES[first.r.slot] ?? first.r.slot)}.</p>` : ''}
     ${p.rejections.map((r) => `<p class="dh-notice dh-notice--warn">${esc(r.by)} rejected it: ${esc(r.reason || 'no reason given')}</p>`).join('')}
-    ${replaced(p) ? '<p class="note">Another proposal used the same nonce and went through, so this one can no longer be sent.</p>' : p.status === 'executed' ? '' : p.broadcasts.filter((b) => !b.ok).slice(-1).map((b) => `<div class="dh-notice dh-notice--error"><p>${esc(b.by)} tried to send it, and Platform refused: ${esc(plainError(b.error))}</p><details><summary>What Platform said</summary><pre>${esc(b.error)}</pre></details></div>`).join('')}
+    ${replaced(p) ? '<p class="note">Another proposal used the same nonce and went through, so this one can no longer be sent.</p>' : p.status === 'executed' ? '' : p.broadcasts.filter((b) => !b.ok).slice(-1).map((b) => `<div class="dh-notice dh-notice--error"><p>${esc(b.by)} tried to send it, and Platform refused: ${esc(plainError(b.error))}</p><details id="d-err-${esc(p.id.slice(0, 16))}"><summary>What Platform said</summary><pre>${esc(b.error)}</pre></details></div>`).join('')}
     <div class="dh-actions">
       ${sign ? `<button class="dh-btn dh-btn--primary" data-action="review" data-id="${esc(p.id)}" data-sign="1">Review and sign</button>` : ''}
       ${execute ? `<button class="dh-btn${failed ? '' : ' dh-btn--primary'}" data-action="execute" data-id="${esc(p.id)}">${failed ? 'Try sending again' : p.type === 'identity-create' ? 'Create the identity' : 'Broadcast to Platform'}</button>` : ''}
@@ -563,7 +563,7 @@ function newProposal(id) {
     <div class="dh-choices kinds">${Object.entries(KINDS).map(([key, v]) => `<button type="button" class="dh-choice" data-action="kind" data-kind="${key}" aria-pressed="${key === kind}"><span class="dh-choice__title">${esc(v.title)}</span><span class="dh-choice__desc">${esc(v.desc)}</span></button>`).join('')}</div>
     ${fields[kind]}
     ${field('note', 'Note for the group <span class="dh-field__optional">optional</span>', '', 'autocomplete="off"')}
-    <details class="dh-disclosure"><summary><span>Signing key</span></summary>${field(`signer-${kind}`, 'Key', `Defaults to the ${esc(SLOT_NAMES[k.slot])}, which Platform requires for this.`, `value="${esc(k.slot)}" autocomplete="off"`)}</details>
+    <details class="dh-disclosure" id="d-signer"><summary><span>Signing key</span></summary>${field(`signer-${kind}`, 'Key', `Defaults to the ${esc(SLOT_NAMES[k.slot])}, which Platform requires for this.`, `value="${esc(k.slot)}" autocomplete="off"`)}</details>
     <div class="dh-actions"><button class="dh-btn dh-btn--primary">Propose to the group</button><button type="button" class="dh-btn dh-btn--quiet" data-action="cancel-new">Cancel</button></div>
     <p class="note">For ${esc(short(id.identityId, 12))}. Nothing happens until enough members sign and someone broadcasts it.</p>
   </form>`;
