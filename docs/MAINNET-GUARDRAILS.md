@@ -20,7 +20,7 @@ This is the deploy-trust part of [MAINNET-SIGNOFF.md](MAINNET-SIGNOFF.md). It ta
 - `.github/CODEOWNERS` names Pasta as owner of what enforces all this:
   - `releases/` and all of `.github/`;
   - the Mainnet flag;
-  - `web/release.mjs`, `manifest.mjs`, `verify.mjs`, `build.mjs`, `headers.mjs` and `wrangler.toml`, which run in the deploy job before the signature check;
+  - `web/release.mjs`, `manifest.mjs`, `verify.mjs`, `build.mjs`, `headers.mjs` (and `src/networks.mjs`, which it imports) and `wrangler.toml`, which run in the deploy job before the signature check;
   - the off switch;
   - `package.json`, `package-lock.json` and `.npmrc`.
 
