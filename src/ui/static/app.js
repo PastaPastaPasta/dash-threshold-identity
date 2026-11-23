@@ -820,7 +820,7 @@ document.addEventListener('submit', (e) => {
       if (!(amount > 0)) { say('Enter how much to lock', 'bad'); return; }
       const c = ceremony();
       const body = { cid: c.cid, duffs: Math.round(amount * DUFFS_PER_DASH), newLock: f.newLock === 'on' };
-      if (c.network === 'mainnet') {
+      if (isMainnet(c.network)) {
         const expect = dashOfDuffs(body.duffs).replace(/,/g, '');
         showDialog(`<header class="dlg__head"><h2 class="dlg__title">Lock ${esc(expect)} DASH on Mainnet</h2></header>
           <p class="dlg__lede">Your page builds an asset lock from your funding address, sends it, and proposes the identity. Once enough members sign and you create it, the locked DASH becomes the identity's balance, less a creation cost of about 0.001 DASH. Until then the lock is held for creating or topping up an identity, and only your seed phrase can use it.</p>

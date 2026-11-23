@@ -28,7 +28,7 @@ async function relayFixture(t) {
 
 const post = (relay, room, messages) => Promise.all(messages.map((m) => fetch(`${relay}/v1/rooms/${room}/messages`, { method: 'POST', body: JSON.stringify(m) })));
 
-test('the live build has mainnet writes on, as Pasta signed off on 2026-11-23', () => {
+test('MAINNET_WRITES is pinned to the value that was signed off', () => {
   assert.equal(MAINNET_WRITES, true);
 });
 

@@ -49,4 +49,4 @@ if (deploy) {
   }
   if (!ok) throw new Error(`deployed, but ${SITE} does not match this build yet; run node web/verify.mjs ${SITE}`);
 }
-console.log(`Mainnet writes are off${deploy ? ` on ${SITE}` : ''}. Open a PR with web/src/flags.mjs, test/web.test.mjs and README.md so main matches.`);
+console.log(`Mainnet writes are off${deploy ? ` on ${SITE}` : ''}. Open a PR with web/src/flags.mjs, test/web.test.mjs and README.md so main matches, and update the Mainnet wording in README.md, docs/HOSTED.md and docs/MAINNET-SIGNOFF.md.`);

@@ -2,9 +2,9 @@
 
 The hosted app runs on Mainnet, Testnet, devnets and Local networks. On Mainnet, writes are **on** since 2026-11-23, by Pasta's decision recorded below. The CLI has supported Mainnet since the first release, behind `--confirm-mainnet` for anything that locks DASH.
 
-## What is on now, and what the flag gates
+## What the flag gates
 
-`web/src/flags.mjs` holds `MAINNET_WRITES = false`. A test fails if it changes, and the bundle hash changes with it, so the deployed value can be checked ([VERIFY.md](VERIFY.md)).
+`web/src/flags.mjs` holds `MAINNET_WRITES = true` since 2026-11-23 (see the sign-off record below). A test pins the value, and the bundle hash changes with it, so the deployed value can be checked ([VERIFY.md](VERIFY.md)). The table shows what a build with the flag off allows.
 
 | On Mainnet with the flag off | Allowed |
 |---|---|
