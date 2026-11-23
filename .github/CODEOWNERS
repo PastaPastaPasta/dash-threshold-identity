@@ -1,17 +1,25 @@
-# Changes to release controls need Pasta's review (see docs/MAINNET-GUARDRAILS.md).
-# The page and Worker code are covered by the signed release instead, so they are not listed here.
-/releases/ @PastaPastaPasta
-/.github/ @PastaPastaPasta
+# Pasta owns everything by default: any file the Mainnet deploy job could run or read before or during
+# the signature check needs his review (see docs/MAINNET-GUARDRAILS.md). New files at the root, such as
+# .env or npm-shrinkwrap.json, are owned automatically.
+* @PastaPastaPasta
+
+# Code whose output the signed release covers, plus tests and docs, needs no extra review.
+/web/src/
+/web/static/
+/web/vendor/
+/web/worker.mjs
+/relay/
+/src/
+/test/
+/docs/
+/examples/
+/bin/
+/scripts/
+/README.md
+
+# Re-owned inside those directories, because they run in the deploy job or gate Mainnet.
 /web/src/flags.mjs @PastaPastaPasta
-/web/release.mjs @PastaPastaPasta
-/web/manifest.mjs @PastaPastaPasta
-/web/verify.mjs @PastaPastaPasta
-/web/wrangler.toml @PastaPastaPasta
-/scripts/mainnet-off.mjs @PastaPastaPasta
-/package.json @PastaPastaPasta
-/package-lock.json @PastaPastaPasta
-/web/build.mjs @PastaPastaPasta
-/web/headers.mjs @PastaPastaPasta
-/.npmrc @PastaPastaPasta
 /src/networks.mjs @PastaPastaPasta
 /src/util.mjs @PastaPastaPasta
+/scripts/mainnet-off.mjs @PastaPastaPasta
+/docs/MAINNET-GUARDRAILS.md @PastaPastaPasta
