@@ -396,13 +396,17 @@ function identityView() {
     return `<section class="step"><h2 class="step__title">Create the identity</h2>
       <div class="empty"><p class="empty__title">The group keys come first</p><p>Once the key ceremony is complete, one member funds the identity and the group signs its creation.</p><div class="dh-actions"><button class="dh-btn" data-action="view" data-view="keys">Go to group keys</button></div></div></section>`;
   }
-  const ip = identityProposal();
-  if (ip) return `<section class="step"><h2 class="step__title">Create the identity</h2>
-    <p class="step__lede">${esc(ip.proposer)} funded the identity. The group now signs its keys, and ${esc(ip.proposer)} creates it.</p>
-    ${proposalCard(ip, { focus: true })}</section>`;
   const net = c.network;
   const f = funding;
   const enough = f && f.duffs > 220000;
+  const ip = identityProposal();
+  if (ip) {
+    const retry = !readOnly() && refused(ip) && ip.proposer === myself()?.name;
+    return `<section class="step"><h2 class="step__title">Create the identity</h2>
+    <p class="step__lede">${esc(ip.proposer)} funded the identity. The group now signs its keys, and ${esc(ip.proposer)} creates it.</p>
+    ${proposalCard(ip, { focus: true })}
+    ${retry ? `<h3 class="group-title">Fund it again</h3><p>Platform refused this identity. If its asset lock can't be used, lock new funds and propose the identity again; the group signs the new proposal.</p>${fundForm(net, f, enough, true)}` : ''}</section>`;
+  }
   return `<section class="step">
     <h2 class="step__title">Fund and create the identity</h2>
     <p class="step__lede">One member pays for the identity by locking ${unit(net)} from their own address. It becomes the identity's starting balance. Any member can do this; the others then sign.</p>
@@ -413,15 +417,19 @@ function identityView() {
         : `<div class="dh-loading" role="status"><span class="dh-spin" aria-hidden="true"></span>Reading your address and balance…</div>`}
       ${net === 'testnet' ? '<p><a class="dh-link" href="https://faucet.dashhq.org/?network=testnet" target="_blank" rel="noopener noreferrer">Get testnet DASH from the faucet ↗</a> Paste your address there, then refresh.</p>' : ''}
     </div>
-    ${readOnly() ? readOnlyNote() : `<form class="panel" id="form-identity-create" data-form="identity">
+    ${readOnly() ? readOnlyNote() : fundForm(net, f, enough)}
+  </section>`;
+}
+
+function fundForm(net, f, enough, fresh = false) {
+  return `<form class="panel" id="form-identity-create" data-form="identity">
       <div class="dh-field"><label class="dh-field__label" for="fund-amount">Amount to lock</label>
         <div class="dh-input-group"><input class="dh-input" id="fund-amount" name="amount" inputmode="decimal" value="0.5" required><span class="dh-input-group__addon">${unit(net)}</span></div>
         <p class="dh-field__help">Creating the identity costs about 0.001 ${unit(net)}; the rest stays as its balance. A small network fee is added. If an earlier lock of yours was never used, for example because the page closed while it waited, that lock is used instead, at its own amount.</p></div>
-      <label class="dh-check"><input type="checkbox" name="newLock"> Lock new funds even if an earlier unused lock is found</label>
+      <label class="dh-check"><input type="checkbox" name="newLock"${fresh ? ' checked' : ''}> Lock new funds even if an earlier unused lock is found</label>
       <div class="dh-actions"><button class="dh-btn dh-btn--primary"${f && !enough ? ' aria-describedby="fund-why"' : ''}>Lock and propose the identity</button>${f && !enough ? `<span class="dh-actions__note" id="fund-why">Waiting for ${unit(net)} at your address, unless an earlier lock of yours is found.</span>` : ''}</div>
       <p class="note">This takes one to three minutes while the network confirms the lock. Keep this page open.</p>
-    </form>`}
-  </section>`;
+    </form>`;
 }
 
 function proposalCard(p, { focus = false } = {}) {

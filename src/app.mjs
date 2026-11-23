@@ -269,7 +269,7 @@ export class Session {
     const all = j.get();
     const key = (i) => `${kind}/${i}`;
     if (index !== undefined) assert(!all[key(index)]?.usedBy, `asset lock ${key(index)} was already used`);
-    let rec = newLock ? null : index !== undefined ? (all[key(index)] ?? null) : (Object.values(all).find((r) => r.kind === kind && !r.usedBy && !r.abandoned && r.duffs === duffs) ?? null);
+    let rec = newLock ? null : index !== undefined ? (all[key(index)] ?? null) : (Object.values(all).find((r) => r.kind === kind && !r.usedBy && !r.abandoned && (kind === 'registration' ? r.duffs >= core.MIN_IDENTITY_CREATE_DUFFS : r.duffs === duffs)) ?? null);
     if (rec?.abandoned) delete rec.abandoned;
     const save = () => j.update((latest) => {
       const k = `${rec.kind}/${rec.index}`;
@@ -332,9 +332,10 @@ export class Session {
         latest[key(keyIndex)] = rec;
       });
     }
-    if (rec.state === 'built') {
+    if ((rec.state === 'built' || rec.state === 'broadcast') && rec.rawtx) {
       const known = await core.fetchTx(network, rec.txid);
       if (!known) {
+        if (rec.state === 'broadcast') this.log(`asset lock ${rec.txid} is no longer known to the network; sending the same transaction again`);
         try {
           await core.broadcastRaw(network, rec.rawtx);
         } catch (e) {
@@ -343,12 +344,15 @@ export class Session {
             save();
             throw new Error(`asset lock ${rec.txid} was rejected and set aside (${rec.abandoned}); run the command again to build a new one`);
           }
-          throw new Error(`could not broadcast asset lock ${rec.txid} yet (${e.message.slice(0, 200)}); run the command again to retry it`);
+          if (rec.state === 'built') throw new Error(`could not broadcast asset lock ${rec.txid} yet (${e.message.slice(0, 200)}); run the command again to retry it`);
+          this.log(`sending asset lock ${rec.txid} again failed (${e.message.slice(0, 200)}); waiting for it anyway`);
         }
       }
-      rec.state = 'broadcast';
-      save();
-      this.log(`asset lock ${rec.txid} broadcast (${rec.duffs} duffs${rec.fee === undefined ? '' : `, fee ${rec.fee}`})`);
+      if (rec.state === 'built') {
+        rec.state = 'broadcast';
+        save();
+        this.log(`asset lock ${rec.txid} broadcast (${rec.duffs} duffs${rec.fee === undefined ? '' : `, fee ${rec.fee}`})`);
+      }
     }
     if (rec.state !== 'chainlocked') {
       const sdk = await this.sdk(network);

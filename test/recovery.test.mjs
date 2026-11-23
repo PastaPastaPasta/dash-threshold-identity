@@ -228,3 +228,15 @@ test('asset locks with many inputs pay at least the minimum relay fee', () => {
   assert.equal(tx.outputs[0].satoshis, 700000);
   assert.equal(tx.outputs[1].script.toAddress('testnet').toString(), funding.address);
 });
+
+test('a journaled lock that left the mempool is sent again instead of waiting forever', async (t) => {
+  const lock = lockTx('registration', 0, 250000);
+  const chain = fakeChain({ locks: [lock], evicted: new Set([lock.txid]) });
+  const { s, logs } = session(t, chain, fakeSdk());
+  s.assetLockJournal(NET).update((all) => {
+    all['registration/0'] = { kind: 'registration', index: 0, duffs: 250000, txid: lock.txid, vout: 0, state: 'broadcast', rawtx: lock.rawtx, fee: lock.fee };
+  });
+  const out = await s.assetLock(NET, { duffs: 300000 });
+  assert.deepEqual([out.txid, out.state, chain.sent.map((x) => x.id)], [lock.txid, 'chainlocked', [lock.txid]]);
+  assert.ok(logs.some((m) => /no longer known to the network/.test(m)));
+});
