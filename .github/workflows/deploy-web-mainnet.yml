@@ -1,13 +1,33 @@
-name: Deploy the hosted app (Mainnet release)
+name: Deploy the hosted app (signed release)
 
+# The only CI deploy of the hosted page. The page serves every network, Mainnet included,
+# so every deploy of it needs a release Pasta signed (docs/MAINNET-GUARDRAILS.md).
 on:
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency: web-mainnet
+
 jobs:
+  test:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm test
+
   deploy:
+    needs: test
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -19,9 +39,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
-          cache: npm
       - run: npm ci --ignore-scripts
-      - run: npm test
       - run: npm run web:build
       - name: Check the README publishes this build
         run: node web/verify.mjs --readme

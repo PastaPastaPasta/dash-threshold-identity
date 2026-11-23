@@ -1,5 +1,12 @@
-# Changes to Mainnet release controls need Pasta's review (see docs/MAINNET-GUARDRAILS.md).
+# Changes to release controls need Pasta's review (see docs/MAINNET-GUARDRAILS.md).
+# The page and Worker code are covered by the signed release instead, so they are not listed here.
 /releases/ @PastaPastaPasta
+/.github/ @PastaPastaPasta
 /web/src/flags.mjs @PastaPastaPasta
-/.github/workflows/deploy-web-mainnet.yml @PastaPastaPasta
-/.github/CODEOWNERS @PastaPastaPasta
+/web/release.mjs @PastaPastaPasta
+/web/manifest.mjs @PastaPastaPasta
+/web/verify.mjs @PastaPastaPasta
+/web/wrangler.toml @PastaPastaPasta
+/scripts/mainnet-off.mjs @PastaPastaPasta
+/package.json @PastaPastaPasta
+/package-lock.json @PastaPastaPasta
