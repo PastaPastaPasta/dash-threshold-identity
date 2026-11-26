@@ -134,9 +134,9 @@ function keyInCreation(m, k, signature) {
 }
 
 async function platformVersion(m, intent) {
-  const pv = m.PlatformVersion.latest();
-  assert(protocolVersionOf(pv) === intent.protocolVersion, `this build of the SDK speaks protocol ${protocolVersionOf(pv)}, the proposal was built for ${intent.protocolVersion}`);
-  return pv;
+  const latest = protocolVersionOf(m.PlatformVersion.latest());
+  assert(intent.protocolVersion >= 14 && intent.protocolVersion <= latest, `this build of the SDK builds protocols 14 to ${latest}, the proposal was built for ${intent.protocolVersion}`);
+  return new m.PlatformVersion(intent.protocolVersion);
 }
 
 function contractJson(intent, id, version) {

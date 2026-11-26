@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { people, runCeremony } from './helpers.mjs';
+import { createHash } from 'node:crypto';
+import { MNEMONICS, people, runCeremony } from './helpers.mjs';
 import { reduce } from '../src/state.mjs';
 import { propose } from '../src/participant.mjs';
 import { makeProposalBody, reviewProposal } from '../src/proposals.mjs';
@@ -9,6 +10,8 @@ import { verify } from '../src/bls.mjs';
 import { approve, combine } from '../src/participant.mjs';
 import { assembleSigned } from '../src/platform/transitions.mjs';
 import { unhex } from '../src/util.mjs';
+import { Session } from '../src/app.mjs';
+import { sdkModule, protocolVersionOf } from '../src/platform/sdk.mjs';
 
 const ps = people(5);
 const ROOM = 'test-room';
@@ -126,4 +129,22 @@ test('three approvals assemble a signed identity create whose proofs verify and 
   const built = await assembleSigned(identityCreate, sigs);
   assert.equal(built.signable, body.signable);
   for (const k of identityCreate.keys) assert.ok(verify(sigs[`${cid}/${k.slot}`].signature, unhex(body.signable), k.publicKey));
+});
+
+test('proposals are stamped with the protocol version the network runs, not the newest one the SDK knows', async () => {
+  const latest = protocolVersionOf((await sdkModule()).PlatformVersion.latest());
+  const s = new Session({ mnemonic: MNEMONICS[0], passphrase: 'TREZOR' });
+  s.sdks.mainnet = Promise.resolve({
+    identities: { nonce: async () => 4n, fetch: async () => ({ revision: 1 }) },
+    system: { status: async () => ({ toJSON: () => ({ version: { protocol: { drive: { current: latest - 1, latest } } } }) }) },
+  });
+  const ctx = await s.chainContext('mainnet', OWNER);
+  assert.equal(ctx.protocolVersion, latest - 1);
+});
+
+test('a contract built for protocol 14 is what SDK 5.0.3 built, and a protocol below 14 or newer than the SDK is refused', async () => {
+  const latest = protocolVersionOf((await sdkModule()).PlatformVersion.latest());
+  const built = await buildTransition(contractCreate);
+  assert.equal(createHash('sha256').update(built.unsigned).digest('hex'), '21956d8593f5da11f1f664376c098346594187d20418daf48231e831a3bdf9cb');
+  for (const protocolVersion of [13, latest + 1]) await assert.rejects(buildTransition({ ...contractCreate, protocolVersion }), new RegExp(`builds protocols 14 to ${latest}`));
 });

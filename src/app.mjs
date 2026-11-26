@@ -5,7 +5,7 @@ import { DEFAULT_KEYS, participantIndex } from './ceremony.mjs';
 import { openRoom, loadRoom, addMessages, journal } from './store.mjs';
 import { envelopeId } from './envelope.mjs';
 import { sync as relaySync, push } from './relay/client.mjs';
-import { connect, retry, errorText, sdkModule, protocolVersionOf } from './platform/sdk.mjs';
+import { connect, retry, errorText } from './platform/sdk.mjs';
 import { makeProposalBody, reviewProposal, signedTransition } from './proposals.mjs';
 import { describeIntent } from './platform/transitions.mjs';
 import * as core from './platform/core.mjs';
@@ -433,8 +433,8 @@ export class Session {
     const nonce = (await retry(() => sdk.identities.nonce(identityId))) ?? 0n;
     const identity = await retry(() => sdk.identities.fetch(identityId));
     assert(identity, `identity ${identityId} not found`);
-    const m = await sdkModule();
-    return { sdk, nonce, revision: BigInt(identity.revision), protocolVersion: protocolVersionOf(m.PlatformVersion.latest()) };
+    const status = (await retry(() => sdk.system.status())).toJSON();
+    return { sdk, nonce, revision: BigInt(identity.revision), protocolVersion: Number(status.version.protocol.drive.current) };
   }
 
   async prepare(kind, args) {
