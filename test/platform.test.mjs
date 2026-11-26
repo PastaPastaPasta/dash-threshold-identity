@@ -142,9 +142,9 @@ test('proposals are stamped with the protocol version the network runs, not the 
   assert.equal(ctx.protocolVersion, latest - 1);
 });
 
-test('a contract built for protocol 14 is what SDK 5.0.3 built, and a protocol newer than the SDK is refused', async () => {
+test('a contract built for protocol 14 is what SDK 5.0.3 built, and a protocol below 14 or newer than the SDK is refused', async () => {
   const latest = protocolVersionOf((await sdkModule()).PlatformVersion.latest());
   const built = await buildTransition(contractCreate);
   assert.equal(createHash('sha256').update(built.unsigned).digest('hex'), '21956d8593f5da11f1f664376c098346594187d20418daf48231e831a3bdf9cb');
-  await assert.rejects(buildTransition({ ...contractCreate, protocolVersion: latest + 1 }), new RegExp(`speaks up to protocol ${latest}`));
+  for (const protocolVersion of [13, latest + 1]) await assert.rejects(buildTransition({ ...contractCreate, protocolVersion }), new RegExp(`builds protocols 14 to ${latest}`));
 });

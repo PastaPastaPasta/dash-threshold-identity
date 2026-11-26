@@ -135,7 +135,7 @@ function keyInCreation(m, k, signature) {
 
 async function platformVersion(m, intent) {
   const latest = protocolVersionOf(m.PlatformVersion.latest());
-  assert(intent.protocolVersion <= latest, `this build of the SDK speaks up to protocol ${latest}, the proposal was built for ${intent.protocolVersion}`);
+  assert(intent.protocolVersion >= 14 && intent.protocolVersion <= latest, `this build of the SDK builds protocols 14 to ${latest}, the proposal was built for ${intent.protocolVersion}`);
   return new m.PlatformVersion(intent.protocolVersion);
 }
 
